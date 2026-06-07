@@ -1,0 +1,19 @@
+# Keep the build context (and image layers) lean and secret-free.
+.git
+.github
+node_modules
+.nuxt
+.output
+.env
+.env.*
+!.env.example
+.idea
+.claude
+.vscode
+*.log
+npm-debug.log*
+.DS_Store
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md

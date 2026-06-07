@@ -1,0 +1,29 @@
+# Deploy on your server with an EXTERNAL MongoDB (Atlas or self-managed).
+# The app reads NUXT_MONGO_URI + NUXT_SESSION_PASSWORD from .env (env_file below).
+#
+#   1) put your real values in .env  (see .env.example)
+#   2) replace OWNER with your GitHub username/org (lowercase)
+#   3) docker compose pull && docker compose up -d
+#
+services:
+  app:
+    # Pull the image published by the GitHub Action…
+    image: ghcr.io/OWNER/quiniela-mundial:latest
+    # …or build it locally instead by commenting out `image:` and using:
+    # build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+
+  # One-off admin tasks (seed fixtures, create users) — needs NUXT_MONGO_URI in .env.
+  # These use the build stage (which has tsx + the scripts), so they only run on demand:
+  #   docker compose --profile tools run --rm tools npm run seed
+  #   docker compose --profile tools run --rm tools npm run create-user -- <user> <pass> --admin
+  tools:
+    build:
+      context: .
+      target: builder
+    env_file: .env
+    profiles: ["tools"]
+    command: ["node", "--version"]
