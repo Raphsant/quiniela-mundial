@@ -9,7 +9,19 @@ export default defineNuxtConfig({
     },
     // Session sealing password comes from NUXT_SESSION_PASSWORD (>= 32 chars).
     // Passwords are hashed with scrypt via nuxt-auth-utils (auth.hash.scrypt).
-  },
+  }, mongoose: {
+    uri: '',
+        options: {
+        bufferCommands: false,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 10000,
+            maxPoolSize: 5,
+            minPoolSize: 0,
+            heartbeatFrequencyMS: 10000,
+    },
+    modelsDir: "models",
+        devtools: true,
+},
 
   // Netlify/Vercel are auto-detected. For a self-hosted Node server (Docker),
   // build with `nuxt build` and run `node .output/server/index.mjs`.
