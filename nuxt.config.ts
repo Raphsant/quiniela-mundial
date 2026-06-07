@@ -6,18 +6,7 @@ export default defineNuxtConfig({
   // In production the URI comes from NUXT_MONGOOSE_URI at runtime; the fallbacks
   // below only matter for local dev / the build-time default.
   mongoose: {
-    uri:
-      process.env.NUXT_MONGOOSE_URI ||
-      process.env.NUXT_MONGO_URI ||
-      process.env.MONGODB_URI ||
-      '',
-    options: {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 10000,
-      maxPoolSize: 5,
-      minPoolSize: 0,
-      heartbeatFrequencyMS: 10000,
-    },
+    uri: '',
     modelsDir: 'models',
     devtools: false,
   },
