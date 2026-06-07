@@ -1,21 +1,31 @@
 import mongoose from 'mongoose'
 
-// Guarantees the mongoose instance OUR models use is connected.
+// Connects the single mongoose instance our models share. nuxt-mongoose also
+// auto-connects, but this is the authoritative, observable path: it reads the
+// URI from any of the common env vars and LOGS the outcome, so a misconfigured
+// deploy shows a clear error instead of silent 10s query-buffering timeouts.
 //
-// nuxt-mongoose already connects on startup, but it force-inlines its runtime,
-// so in dev (vite-node) its connection can land on a *second* mongoose copy
-// while our models hold the first — queries then buffer and time out. This
-// plugin connects the app-context instance (the same one the models import),
-// reading the URI that nuxt-mongoose resolved. It's idempotent: if the
-// instance is already connecting/connected (the normal production path), it
-// no-ops, so there's never a duplicate connection.
+// Idempotent: if the connection is already open/opening it no-ops, so there is
+// never a duplicate connection.
 export default defineNitroPlugin(async () => {
   if (mongoose.connection.readyState !== 0) return // 0 = disconnected
-  const uri = (useRuntimeConfig().mongoose as { uri?: string } | undefined)?.uri
-  if (!uri) return
+
+  const cfg = useRuntimeConfig()
+  const uri =
+    (cfg.mongoose as { uri?: string } | undefined)?.uri ||
+    process.env.NUXT_MONGOOSE_URI ||
+    process.env.MONGODB_URI ||
+    process.env.NUXT_MONGO_URI
+
+  if (!uri) {
+    console.error('[mongoose] No MongoDB URI configured — set NUXT_MONGOOSE_URI (or MONGODB_URI).')
+    return
+  }
+
   try {
     await mongoose.connect(uri)
+    console.log(`[mongoose] connected to ${mongoose.connection.host}/${mongoose.connection.name}`)
   } catch (err) {
-    console.error('[mongoose] connection error:', err)
+    console.error('[mongoose] connection FAILED:', (err as Error).message)
   }
 })

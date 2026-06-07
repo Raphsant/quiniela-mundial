@@ -11,7 +11,7 @@
     "create-user": "tsx scripts/create-user.ts"
   },
   "dependencies": {
-    "mongoose": "^8.9.0",
+    "mongoose": "^9.0.2",
     "nuxt": "^4.0.0",
     "nuxt-auth-utils": "^0.5.0",
     "nuxt-mongoose": "^1.1.2",
