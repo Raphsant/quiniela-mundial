@@ -3,7 +3,6 @@ import { Match } from '../../models/Match'
 import { Prediction } from '../../models/Prediction'
 
 export default defineEventHandler(async (event) => {
-  await connectDB()
   const matches = await Match.find().sort({ kickoffAt: 1 }).lean()
 
   // Attach this user's predictions if logged in.

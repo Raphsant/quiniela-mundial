@@ -38,8 +38,6 @@ function matchThirds(
 }
 
 export default defineEventHandler(async (event) => {
-  await connectDB()
-
   // --- user's group predictions → projection (who finishes 1st/2nd/3rd) ---
   const session = await getUserSession(event)
   let dbUser: any = null

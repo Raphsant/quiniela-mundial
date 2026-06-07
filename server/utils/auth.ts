@@ -4,7 +4,6 @@ import { User } from '../models/User'
 // Resolves the authenticated user from the sealed session and loads the DB record.
 export async function requireDbUser(event: H3Event) {
   const { user } = await requireUserSession(event)
-  await connectDB()
   const dbUser = await User.findById((user as any).id)
   if (!dbUser) throw createError({ statusCode: 401, statusMessage: 'Unknown user' })
   return dbUser

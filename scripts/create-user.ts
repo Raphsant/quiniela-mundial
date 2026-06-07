@@ -24,8 +24,8 @@ async function run() {
   const username = rawUsername.trim().toLowerCase()
   const isAdmin = flags.includes('--admin')
 
-  const uri = process.env.NUXT_MONGO_URI || process.env.MONGODB_URI
-  if (!uri) throw new Error('Set NUXT_MONGO_URI (or MONGODB_URI) before running')
+  const uri = process.env.NUXT_MONGOOSE_URI || process.env.NUXT_MONGO_URI || process.env.MONGODB_URI
+  if (!uri) throw new Error('Set NUXT_MONGOOSE_URI before running')
   await mongoose.connect(uri)
 
   // Empty options => library defaults, matching nuxt-auth-utils' runtimeConfig.hash.scrypt ({}).

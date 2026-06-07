@@ -9,7 +9,6 @@ const schema = z.object({
 export default defineEventHandler(async (event) => {
   const { username, password } = await readValidatedBody(event, schema.parse)
 
-  await connectDB()
   const dbUser = await User.findOne({ username: username.trim().toLowerCase() })
 
   // verifyPassword (nuxt-auth-utils) uses scrypt; the lookup + verify are both

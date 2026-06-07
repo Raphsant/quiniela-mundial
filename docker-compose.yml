@@ -1,5 +1,5 @@
 # Deploy on your server with an EXTERNAL MongoDB (Atlas or self-managed).
-# The app reads NUXT_MONGO_URI + NUXT_SESSION_PASSWORD from .env (env_file below).
+# The app reads NUXT_MONGOOSE_URI + NUXT_SESSION_PASSWORD from .env (env_file below).
 #
 #   1) put your real values in .env  (see .env.example)
 #   2) replace OWNER with your GitHub username/org (lowercase)

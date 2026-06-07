@@ -8,7 +8,7 @@ eliminatorio** hasta la final: predices todo el Mundial antes del primer silbata
 ## Stack
 
 - **Nuxt 4** (full-stack: front Vue 3 + API en Nitro)
-- **MongoDB + Mongoose** (Atlas free tier es suficiente)
+- **MongoDB + Mongoose** vía **nuxt-mongoose** (autoconexión en el arranque)
 - **nuxt-auth-utils** — login usuario/contraseña (scrypt), sesión en cookie sellada
 - **Zod** para validar cada endpoint
 
@@ -35,7 +35,7 @@ eliminatorio** hasta la final: predices todo el Mundial antes del primer silbata
 
 ```bash
 npm install
-cp .env.example .env          # completa NUXT_MONGO_URI y NUXT_SESSION_PASSWORD
+cp .env.example .env          # completa NUXT_MONGOOSE_URI y NUXT_SESSION_PASSWORD
 npm run seed                  # carga los 104 partidos
 npm run create-user -- sunny 'TuPassword!' --admin
 npm run dev                   # http://localhost:3000
@@ -50,7 +50,7 @@ La imagen se publica automáticamente en **GHCR** vía GitHub Actions
 
 ```bash
 # en tu servidor (con un MongoDB externo accesible):
-#  1. crea .env con NUXT_MONGO_URI + NUXT_SESSION_PASSWORD
+#  1. crea .env con NUXT_MONGOOSE_URI + NUXT_SESSION_PASSWORD
 #  2. edita docker-compose.yml: reemplaza OWNER por tu usuario/org de GitHub
 docker compose pull
 docker compose up -d                     # app en el puerto 3000

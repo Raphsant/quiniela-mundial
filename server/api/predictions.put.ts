@@ -11,7 +11,6 @@ export default defineEventHandler(async (event) => {
   const dbUser = await requireDbUser(event)
   const body = await readValidatedBody(event, schema.parse)
 
-  await connectDB()
   const match = await Match.findById(body.matchId)
   if (!match) throw createError({ statusCode: 404, statusMessage: 'Match not found' })
 

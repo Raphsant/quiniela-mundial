@@ -11,7 +11,6 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readValidatedBody(event, schema.parse)
 
-  await connectDB()
   const match = await Match.findByIdAndUpdate(
     id,
     { homeGoals: body.homeGoals, awayGoals: body.awayGoals, status: 'finished' },

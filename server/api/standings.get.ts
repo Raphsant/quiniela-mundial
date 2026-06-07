@@ -11,8 +11,6 @@ interface Row {
 }
 
 export default defineEventHandler(async () => {
-  await connectDB()
-
   const rc = useRuntimeConfig()
   const cfg: ScoreConfig = { hit: Number(rc.scoring.hit) }
 

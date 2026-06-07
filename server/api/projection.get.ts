@@ -5,8 +5,6 @@ import { project, type GroupMatch, type Outcome } from '../utils/projection'
 
 // Projects the logged-in user's group-stage picks into a Round-of-32 forecast.
 export default defineEventHandler(async (event) => {
-  await connectDB()
-
   const session = await getUserSession(event)
   const groupMatches = await Match.find({ stage: 'group' }).lean()
 

@@ -245,8 +245,8 @@ function buildKnockout() {
 }
 
 async function run() {
-  const uri = process.env.NUXT_MONGO_URI || process.env.MONGODB_URI
-  if (!uri) throw new Error('Set NUXT_MONGO_URI (or MONGODB_URI) before seeding')
+  const uri = process.env.NUXT_MONGOOSE_URI || process.env.NUXT_MONGO_URI || process.env.MONGODB_URI
+  if (!uri) throw new Error('Set NUXT_MONGOOSE_URI before seeding')
   await mongoose.connect(uri)
 
   const docs = [...buildMatches(), ...buildKnockout()]
