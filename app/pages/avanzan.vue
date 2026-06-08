@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const { loggedIn } = useUserSession()
-const { data: proj } = await useFetch('/api/projection')
+const { data: proj, refresh } = await useFetch('/api/projection')
 
 const pct = computed(() => {
   const p = proj.value
@@ -17,6 +17,45 @@ function rankLabel(t: any) {
   if (t.advances) return 'Avanza'
   if (t.isThird) return '3.º'
   return 'Fuera'
+}
+
+// --- Point-tie resolution ---------------------------------------------------
+// One entry per scope (group / THIRDS); merge clusters so each scope saves once.
+const ties = computed(() => {
+  const map = new Map<string, { scope: string; kind: string; teams: { name: string; pts: number }[] }>()
+  for (const pt of proj.value?.pendingTies || []) {
+    const e = map.get(pt.scope) || { scope: pt.scope, kind: pt.kind, teams: [] }
+    for (const t of pt.teams) if (!e.teams.some((x) => x.name === t.name)) e.teams.push({ name: t.name, pts: t.pts })
+    map.set(pt.scope, e)
+  }
+  return [...map.values()]
+})
+
+const drafts = reactive<Record<string, string[]>>({})
+const savingTie = ref<string | null>(null)
+watchEffect(() => {
+  for (const t of ties.value) if (!drafts[t.scope]) drafts[t.scope] = t.teams.map((x) => x.name)
+  for (const k of Object.keys(drafts)) if (!ties.value.some((t) => t.scope === k)) delete drafts[k]
+})
+
+function ptsOf(t: any, name: string) {
+  return t.teams.find((x: any) => x.name === name)?.pts ?? ''
+}
+function move(scope: string, i: number, dir: -1 | 1) {
+  const a = drafts[scope]
+  const j = i + dir
+  if (!a || j < 0 || j >= a.length) return
+  a.splice(j, 0, a.splice(i, 1)[0]!)
+}
+async function saveTie(scope: string) {
+  savingTie.value = scope
+  try {
+    await $fetch('/api/tiebreak', { method: 'PUT', body: { scope, order: drafts[scope] } })
+    await refresh()
+  } catch (e: any) {
+    alert(e.data?.statusMessage || 'No se pudo guardar el desempate')
+  }
+  savingTie.value = null
 }
 </script>
 
@@ -46,6 +85,44 @@ function rankLabel(t: any) {
           Faltan picks — la proyección usa solo los partidos que ya elegiste, así que aún puede cambiar.
         </p>
         <p v-else class="prog-hint done">¡Completaste todos tus pronósticos! Esta es tu proyección definitiva.</p>
+      </div>
+
+      <!-- Point-tie resolution (blocks the bracket until done) -->
+      <template v-if="ties.length">
+        <div class="card tiewarn">
+          <span class="tw-emoji">⚖️</span>
+          <p>
+            Tienes <strong>{{ ties.length }}</strong> empate(s) en puntos. En un Mundial real lo definiría la
+            <strong>diferencia de goles</strong> — como aquí no llevamos goles, <strong>decídelo tú</strong>.
+            Hasta resolverlos, el <NuxtLink to="/bracket">cuadro</NuxtLink> queda bloqueado.
+          </p>
+        </div>
+
+        <div v-for="t in ties" :key="t.scope" class="card tiecard">
+          <div class="tiehead">
+            <span class="tietag">{{ t.kind === 'thirds' ? '🥉 Mejores terceros' : 'Grupo ' + t.scope }}</span>
+            <span class="tiesub">Arrastra al de arriba quien termina por delante</span>
+          </div>
+          <div class="tielist">
+            <div v-for="(name, i) in drafts[t.scope]" :key="name" class="tieitem">
+              <span class="tiepos">{{ i + 1 }}</span>
+              <TeamBadge class="tiename" :name="name" />
+              <span class="tiepts">{{ ptsOf(t, name) }} pts</span>
+              <div class="tiearrows">
+                <button :disabled="i === 0" @click="move(t.scope, i, -1)" aria-label="Subir">▲</button>
+                <button :disabled="i === drafts[t.scope].length - 1" @click="move(t.scope, i, 1)" aria-label="Bajar">▼</button>
+              </div>
+            </div>
+          </div>
+          <button class="btn tiesave" :disabled="savingTie === t.scope" @click="saveTie(t.scope)">
+            {{ savingTie === t.scope ? 'Guardando…' : 'Guardar desempate' }}
+          </button>
+        </div>
+      </template>
+
+      <div v-else-if="proj.complete" class="card tieok">
+        ✅ Sin empates pendientes — el cuadro está desbloqueado.
+        <NuxtLink class="link" to="/bracket">Ir al cuadro →</NuxtLink>
       </div>
 
       <!-- Groups -->
@@ -125,6 +202,29 @@ function rankLabel(t: any) {
 .bar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), #00c2a8); transition: width .4s ease; }
 .prog-hint { margin: 10px 0 0; font-size: 12.5px; color: var(--mut); }
 .prog-hint.done { color: var(--good); }
+
+/* Tie resolution */
+.tiewarn { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin-bottom: 12px; border-color: #4a4220; background: linear-gradient(135deg, rgba(210, 153, 34, .12), var(--card)); }
+.tiewarn .tw-emoji { font-size: 24px; flex: 0 0 auto; }
+.tiewarn p { margin: 0; color: var(--mut); font-size: 13.5px; line-height: 1.5; }
+.tiewarn strong { color: var(--txt); }
+.tiewarn a { color: #f5c842; font-weight: 700; }
+.tiecard { padding: 14px 16px; margin-bottom: 12px; }
+.tiehead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.tietag { font-weight: 800; font-size: 13px; color: #d29922; background: rgba(210, 153, 34, .14); padding: 3px 10px; border-radius: 999px; }
+.tiesub { color: var(--mut); font-size: 12px; }
+.tielist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.tieitem { display: grid; grid-template-columns: 22px 1fr auto auto; align-items: center; gap: 10px; background: #0f1116; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+.tiepos { font-weight: 800; color: var(--acc); text-align: center; }
+.tiename { min-width: 0; }
+.tiepts { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--mut); font-size: 12.5px; }
+.tiearrows { display: flex; gap: 4px; }
+.tiearrows button { width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--txt); cursor: pointer; font-size: 11px; }
+.tiearrows button:disabled { opacity: .35; cursor: default; }
+.tiearrows button:hover:not(:disabled) { border-color: var(--acc); }
+.tiesave { width: 100%; }
+.tieok { padding: 14px 16px; margin-bottom: 12px; color: var(--good); border-color: #2e5a36; }
+.tieok .link { color: var(--acc); font-weight: 700; text-decoration: none; margin-left: 8px; }
 
 .sec { font-size: 18px; margin: 22px 0 6px; }
 .sec .sub { color: var(--mut); font-size: 13px; font-weight: 500; }

@@ -60,6 +60,9 @@ async function pickWinner(m: any, side: 'H' | 'A') {
     <NuxtLink v-else-if="!data?.complete" to="/" class="note card todo">
       🧩 Completa tus <strong>{{ data?.predictedCount }}/{{ data?.totalGames }}</strong> pronósticos de grupo para llenar el cuadro con los equipos que avanzan. <span class="go">Ir a pronósticos →</span>
     </NuxtLink>
+    <NuxtLink v-else-if="data?.tiesPending" to="/avanzan" class="note card todo">
+      ⚖️ Hay <strong>empate(s) en puntos</strong> que definen quién avanza. Resuélvelos en <strong>¿Quién avanza?</strong> para desbloquear el cuadro. <span class="go">Resolver empates →</span>
+    </NuxtLink>
     <p v-else-if="data?.locked" class="note card">🔒 El torneo comenzó: el cuadro quedó bloqueado.</p>
     <p v-else class="note card ok">✅ ¡Cuadro completo! Elige los ganadores ronda por ronda hasta coronar a tu campeón.</p>
 

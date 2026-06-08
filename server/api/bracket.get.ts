@@ -1,6 +1,7 @@
 import { User } from '../models/User'
 import { Match } from '../models/Match'
 import { Prediction } from '../models/Prediction'
+import { Tiebreak } from '../models/Tiebreak'
 import { project, type GroupMatch, type Outcome } from '../utils/projection'
 
 const STAGE_RANK: Record<string, number> = { r32: 0, r16: 1, qf: 2, sf: 3, third: 4, final: 5 }
@@ -54,8 +55,12 @@ export default defineEventHandler(async (event) => {
 
   const groupPickByMatch = new Map<string, Outcome>()
   const koPickByCode = new Map<string, Outcome>()
+  const tiebreaks: Record<string, string[]> = {}
   if (dbUser) {
-    const preds = await Prediction.find({ user: dbUser._id }).lean()
+    const [preds, ties] = await Promise.all([
+      Prediction.find({ user: dbUser._id }).lean(),
+      Tiebreak.find({ user: dbUser._id }).lean(),
+    ])
     const codeById = new Map(koMatches.map((m: any) => [String(m._id), m.code]))
     for (const p of preds as any[]) {
       if (!p.outcome) continue
@@ -63,6 +68,7 @@ export default defineEventHandler(async (event) => {
       if (code) koPickByCode.set(code, p.outcome)
       else groupPickByMatch.set(String(p.match), p.outcome)
     }
+    for (const t of ties as any[]) tiebreaks[t.scope] = t.order || []
   }
 
   const input: GroupMatch[] = groupMatches.map((m: any) => ({
@@ -71,7 +77,7 @@ export default defineEventHandler(async (event) => {
     awayTeam: m.awayTeam,
     pick: groupPickByMatch.get(String(m._id)) || null,
   }))
-  const proj = project(input)
+  const proj = project(input, tiebreaks)
 
   const groupComplete: Record<string, boolean> = {}
   const groupPos: Record<string, string[]> = {}
@@ -80,6 +86,9 @@ export default defineEventHandler(async (event) => {
     groupPos[g.group] = g.teams.map((t) => t.name)
   }
   const allComplete = proj.complete
+  // The bracket only fills once every group is predicted AND every points tie is
+  // settled — an unresolved tie means we don't know who finishes where.
+  const canResolve = allComplete && proj.tiesResolved
 
   // --- resolve the bracket, propagating each pick to the next round ---
   const ordered = [...koMatches].sort(
@@ -88,7 +97,7 @@ export default defineEventHandler(async (event) => {
 
   // Third-slot → team, via the matching above (only meaningful once all groups done).
   let thirdByKey: Record<string, string> = {}
-  if (allComplete) {
+  if (canResolve) {
     const slots: { key: string; groups: string[] }[] = []
     for (const m of ordered) {
       for (const side of ['home', 'away'] as const) {
@@ -107,7 +116,7 @@ export default defineEventHandler(async (event) => {
     if (!feed) return { team: null, label: 'Por definir' }
     if (feed.t === 'pos') {
       const label = `${feed.n}.º ${feed.g}`
-      const team = groupComplete[feed.g] ? groupPos[feed.g]?.[feed.n - 1] ?? null : null
+      const team = canResolve && groupComplete[feed.g] ? groupPos[feed.g]?.[feed.n - 1] ?? null : null
       return { team, label }
     }
     if (feed.t === 'third') {
@@ -148,6 +157,9 @@ export default defineEventHandler(async (event) => {
     loggedIn: !!dbUser,
     locked,
     complete: allComplete,
+    blocked: !canResolve,
+    tiesPending: allComplete && !proj.tiesResolved, // complete but ties unresolved
+    pendingTies: proj.pendingTies,
     predictedCount: proj.predictedCount,
     totalGames: proj.totalGames,
     champion: winnerByCode['F-01'] || null,
