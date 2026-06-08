@@ -1,10 +1,43 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'admin' })
 
-const tab = ref<'users' | 'results'>('users')
+const tab = ref<'users' | 'results' | 'create'>('users')
 
 // Users + their predictions (read-only).
-const { data: usersData } = await useFetch('/api/admin/users')
+const { data: usersData, refresh: refreshUsers } = await useFetch('/api/admin/users')
+
+// Create user (admin-only).
+const form = reactive({ username: '', password: '', displayName: '', isAdmin: false })
+const creating = ref(false)
+const createMsg = ref<{ ok: boolean; text: string } | null>(null)
+async function createUser() {
+  if (!form.username.trim() || form.password.length < 6) {
+    createMsg.value = { ok: false, text: 'Usuario requerido y contraseña de 6+ caracteres.' }
+    return
+  }
+  creating.value = true
+  createMsg.value = null
+  try {
+    const res = await $fetch('/api/admin/users', {
+      method: 'POST',
+      body: {
+        username: form.username,
+        password: form.password,
+        displayName: form.displayName || undefined,
+        isAdmin: form.isAdmin,
+      },
+    })
+    createMsg.value = { ok: true, text: `Usuario "${res.user.username}" creado${res.user.isAdmin ? ' (admin)' : ''}.` }
+    form.username = ''
+    form.password = ''
+    form.displayName = ''
+    form.isAdmin = false
+    await refreshUsers()
+  } catch (e: any) {
+    createMsg.value = { ok: false, text: e.data?.statusMessage || 'Error al crear usuario' }
+  }
+  creating.value = false
+}
 
 // Results loading (existing).
 const { data: matches, refresh } = await useFetch('/api/matches')
@@ -50,6 +83,9 @@ function matchLabel(p: any) {
       <button class="tab" :class="{ on: tab === 'results' }" @click="tab = 'results'">
         Cargar resultados
       </button>
+      <button class="tab" :class="{ on: tab === 'create' }" @click="tab = 'create'">
+        Crear usuario
+      </button>
     </nav>
 
     <!-- USERS -->
@@ -92,6 +128,32 @@ function matchLabel(p: any) {
         <span class="status" :class="{ done: m.status === 'finished' }">{{ m.status === 'finished' ? '✓' : '' }}</span>
         <button class="btn" :disabled="saving === m._id" @click="saveResult(m)">Guardar</button>
       </div>
+    </section>
+
+    <!-- CREATE USER -->
+    <section v-show="tab === 'create'">
+      <form class="card form" @submit.prevent="createUser">
+        <label class="field">
+          <span>Usuario</span>
+          <input v-model="form.username" type="text" autocapitalize="none" autocomplete="off" placeholder="juan" />
+        </label>
+        <label class="field">
+          <span>Contraseña</span>
+          <input v-model="form.password" type="text" autocomplete="off" placeholder="mín. 6 caracteres" />
+        </label>
+        <label class="field">
+          <span>Nombre a mostrar <em>(opcional)</em></span>
+          <input v-model="form.displayName" type="text" autocomplete="off" placeholder="Juan Pérez" />
+        </label>
+        <label class="check">
+          <input v-model="form.isAdmin" type="checkbox" />
+          <span>Administrador</span>
+        </label>
+        <button class="btn create" type="submit" :disabled="creating">
+          {{ creating ? 'Creando…' : 'Crear usuario' }}
+        </button>
+        <p v-if="createMsg" class="msg" :class="createMsg.ok ? 'ok' : 'err'">{{ createMsg.text }}</p>
+      </form>
     </section>
   </div>
 </template>
@@ -140,6 +202,22 @@ details[open] .chev { transform: rotate(180deg); }
 .inputs { display: flex; align-items: center; gap: 6px; }
 .inputs input { width: 52px; padding: 6px; text-align: center; background: #0f1116; color: var(--txt); border: 1px solid var(--line); border-radius: 6px; }
 .status.done { color: var(--good); }
+
+/* Create user */
+.form { display: flex; flex-direction: column; gap: 14px; padding: 16px; max-width: 420px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field span { font-size: 13px; font-weight: 700; color: var(--mut); }
+.field em { font-weight: 400; font-style: normal; opacity: .7; }
+.field input {
+  padding: 10px 12px; background: #0f1116; color: var(--txt);
+  border: 1px solid var(--line); border-radius: 8px; font-size: 15px;
+}
+.check { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.check input { width: 18px; height: 18px; }
+.btn.create { padding: 11px; font-size: 15px; }
+.msg { margin: 0; font-size: 13px; font-weight: 700; }
+.msg.ok { color: var(--good); }
+.msg.err { color: #ff6b6b; }
 
 @media (max-width: 560px) {
   .pick { grid-template-columns: 48px 1fr auto; }
