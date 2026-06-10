@@ -28,6 +28,9 @@ const matchSchema = new Schema(
 
     homeGoals: { type: Number, default: null },
     awayGoals: { type: Number, default: null },
+    // Knockout only: who went through when the entered score is level (i.e. the
+    // match was decided on penalties). Null whenever the goals already decide.
+    advancer: { type: String, enum: ['H', 'A'], default: null },
     status: { type: String, enum: ['scheduled', 'finished'], default: 'scheduled' },
   },
   { timestamps: true },

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { getTeam } from '~/utils/teams'
+
 definePageMeta({ middleware: 'admin' })
 
 const tab = ref<'users' | 'results' | 'create'>('users')
@@ -39,22 +41,39 @@ async function createUser() {
   creating.value = false
 }
 
-// Results loading (existing).
-const { data: matches, refresh } = await useFetch('/api/matches')
+// Results loading (existing). Knockout rows come back with the real teams as
+// far as entered results determine them, plus a slot label until then.
+// deep:true — Nuxt 4 defaults useFetch to a shallowRef, and the template reacts
+// to per-row edits (editH/editA toggle the advancer block, editAdv its buttons).
+const { data: matches, refresh } = await useFetch('/api/matches', { deep: true })
 const saving = ref<string | null>(null)
 watchEffect(() => {
   matches.value?.forEach((m: any) => {
     if (m.editH == null) m.editH = m.homeGoals
     if (m.editA == null) m.editA = m.awayGoals
+    if (m.editAdv == null) m.editAdv = m.advancer
   })
 })
+
+function filled(v: any) {
+  return v !== null && v !== undefined && v !== ''
+}
+// Level knockout score → the admin must say who went through (penalties).
+function needsAdvancer(m: any) {
+  return m.stage !== 'group' && filled(m.editH) && filled(m.editA) && Number(m.editH) === Number(m.editA)
+}
+
 async function saveResult(m: any) {
-  if (m.editH == null || m.editA == null) return
+  if (!filled(m.editH) || !filled(m.editA)) return
   saving.value = m._id
   try {
     await $fetch(`/api/matches/${m._id}/result`, {
       method: 'PUT',
-      body: { homeGoals: Number(m.editH), awayGoals: Number(m.editA) },
+      body: {
+        homeGoals: Number(m.editH),
+        awayGoals: Number(m.editA),
+        advancer: needsAdvancer(m) ? m.editAdv || null : null,
+      },
     })
     await refresh()
   } catch (e: any) {
@@ -63,7 +82,30 @@ async function saveResult(m: any) {
   saving.value = null
 }
 
-// How a pick reads. Group matches have team names; knockout teams are per-user.
+const STAGE_LABELS: Record<string, string> = {
+  group: 'Fase de grupos',
+  r32: 'Dieciseisavos de final',
+  r16: 'Octavos de final',
+  qf: 'Cuartos de final',
+  sf: 'Semifinales',
+  third: 'Tercer puesto',
+  final: 'Final',
+}
+// Matches arrive sorted by kickoff, so stages are contiguous: show a heading
+// each time the stage changes.
+function stageHead(i: number) {
+  const list: any[] = matches.value || []
+  const m = list[i]
+  const prev = list[i - 1]
+  return m && (!prev || prev.stage !== m.stage) ? STAGE_LABELS[m.stage] || m.stage : null
+}
+
+function flag(name: string | null) {
+  return getTeam(name).flag
+}
+
+// How a pick reads. Knockout teams are the user's own predicted bracket; while
+// their group picks are incomplete the slot is unknown and we fall back.
 function pickLabel(p: any) {
   if (p.home && p.away) return p.outcome === 'H' ? p.home : p.outcome === 'A' ? p.away : 'Empate'
   return p.outcome === 'H' ? 'Local' : p.outcome === 'A' ? 'Visitante' : 'Empate'
@@ -117,17 +159,42 @@ function matchLabel(p: any) {
 
     <!-- RESULTS -->
     <section v-show="tab === 'results'" class="list">
-      <div v-for="m in matches" :key="m._id" class="card row">
-        <span class="team">{{ m.homeTeam || m.code }}</span>
-        <div class="inputs">
-          <input type="number" min="0" max="99" v-model="m.editH" />
-          <span>-</span>
-          <input type="number" min="0" max="99" v-model="m.editA" />
+      <template v-for="(m, i) in matches" :key="m._id">
+        <h3 v-if="stageHead(i)" class="stagehead">{{ stageHead(i) }}</h3>
+        <div class="card mrow" :class="{ done: m.status === 'finished' }">
+          <div class="row">
+            <span class="code">{{ m.code }}</span>
+            <span class="team">
+              <span class="flag">{{ flag(m.homeTeam) }}</span>
+              <span v-if="m.homeTeam" class="tname">{{ m.homeTeam }}</span>
+              <span v-else class="slot">{{ m.homeSlot || 'Por definir' }}</span>
+            </span>
+            <div class="inputs">
+              <input type="number" min="0" max="99" v-model="m.editH" />
+              <span>-</span>
+              <input type="number" min="0" max="99" v-model="m.editA" />
+            </div>
+            <span class="team away">
+              <span v-if="m.awayTeam" class="tname">{{ m.awayTeam }}</span>
+              <span v-else class="slot">{{ m.awaySlot || 'Por definir' }}</span>
+              <span class="flag">{{ flag(m.awayTeam) }}</span>
+            </span>
+            <span class="status" :class="{ done: m.status === 'finished' }">{{ m.status === 'finished' ? '✓' : '' }}</span>
+            <button class="btn" :disabled="saving === m._id" @click="saveResult(m)">Guardar</button>
+          </div>
+          <div v-if="needsAdvancer(m)" class="adv">
+            <span class="advlbl">⚖️ Empate — ¿quién avanza (penales)?</span>
+            <div class="advbtns">
+              <button class="advbtn" :class="{ on: m.editAdv === 'H' }" @click="m.editAdv = 'H'">
+                {{ m.homeTeam || m.homeSlot || 'Local' }}
+              </button>
+              <button class="advbtn" :class="{ on: m.editAdv === 'A' }" @click="m.editAdv = 'A'">
+                {{ m.awayTeam || m.awaySlot || 'Visitante' }}
+              </button>
+            </div>
+          </div>
         </div>
-        <span class="team away">{{ m.awayTeam || '' }}</span>
-        <span class="status" :class="{ done: m.status === 'finished' }">{{ m.status === 'finished' ? '✓' : '' }}</span>
-        <button class="btn" :disabled="saving === m._id" @click="saveResult(m)">Guardar</button>
-      </div>
+      </template>
     </section>
 
     <!-- CREATE USER -->
@@ -196,12 +263,38 @@ details[open] .chev { transform: rotate(180deg); }
 .ppick.draw { color: var(--mut); }
 
 /* Results */
-.row { display: grid; grid-template-columns: 1fr auto 1fr 24px auto; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 8px; }
-.team { font-weight: bold; }
-.team.away { text-align: right; }
+.stagehead {
+  margin: 20px 0 10px; font-size: 12px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .7px; color: var(--mut);
+}
+.stagehead:first-child { margin-top: 0; }
+.mrow { padding: 10px 14px; margin-bottom: 8px; }
+.mrow.done { border-color: #2e4636; }
+.row { display: grid; grid-template-columns: 58px 1fr auto 1fr 22px auto; align-items: center; gap: 10px; }
+.code {
+  font-size: 10.5px; font-weight: 800; color: #8b95f7; background: rgba(88, 101, 242, .12);
+  padding: 3px 4px; border-radius: 6px; text-align: center; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.team { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 700; }
+.team .tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team .flag { font-size: 18px; flex: 0 0 auto; }
+.team.away { justify-content: flex-end; text-align: right; }
+.slot { color: var(--mut); font-style: italic; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inputs { display: flex; align-items: center; gap: 6px; }
 .inputs input { width: 52px; padding: 6px; text-align: center; background: #0f1116; color: var(--txt); border: 1px solid var(--line); border-radius: 6px; }
 .status.done { color: var(--good); }
+
+/* Penalties: who advances on a level knockout score */
+.adv { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.advlbl { font-size: 12.5px; color: #d29922; font-weight: 700; }
+.advbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.advbtn {
+  background: #0f1116; color: var(--mut); border: 1.5px solid var(--line);
+  padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer; transition: .14s;
+}
+.advbtn:hover { color: var(--txt); border-color: #3a4256; }
+.advbtn.on { background: rgba(88, 101, 242, .18); border-color: var(--acc); color: #fff; }
 
 /* Create user */
 .form { display: flex; flex-direction: column; gap: 14px; padding: 16px; max-width: 420px; }
@@ -221,7 +314,8 @@ details[open] .chev { transform: rotate(180deg); }
 
 @media (max-width: 560px) {
   .pick { grid-template-columns: 48px 1fr auto; }
-  .row { grid-template-columns: 1fr auto 1fr; }
-  .row .status, .row .btn { grid-column: span 3; }
+  .row { grid-template-columns: 44px 1fr auto 1fr; }
+  .row .status { display: none; }
+  .row .btn { grid-column: 1 / -1; }
 }
 </style>
