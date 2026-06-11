@@ -5,8 +5,46 @@ definePageMeta({ middleware: 'admin' })
 
 const tab = ref<'users' | 'results' | 'create'>('users')
 
-// Users + their predictions (read-only).
+// Users + their predictions.
 const { data: usersData, refresh: refreshUsers } = await useFetch('/api/admin/users')
+
+// Rename / delete users.
+const { user: me } = useUserSession()
+const editingId = ref<string | null>(null)
+const editName = ref('')
+const busyId = ref<string | null>(null)
+
+function startRename(u: any) {
+  editingId.value = u.id
+  editName.value = u.displayName
+  nextTick(() => (document.getElementById(`rename-${u.id}`) as HTMLInputElement | null)?.focus())
+}
+function cancelRename() {
+  editingId.value = null
+}
+async function saveRename(u: any) {
+  busyId.value = u.id
+  try {
+    await $fetch(`/api/admin/users/${u.id}`, { method: 'PATCH', body: { displayName: editName.value } })
+    editingId.value = null
+    await refreshUsers()
+  } catch (e: any) {
+    alert(e.data?.statusMessage || 'No se pudo renombrar')
+  }
+  busyId.value = null
+}
+async function removeUser(u: any) {
+  const preds = u.count ? ` Se borrarán también sus ${u.count} pronósticos.` : ''
+  if (!confirm(`¿Eliminar a "${u.displayName}" (@${u.username})?${preds} Esta acción no se puede deshacer.`)) return
+  busyId.value = u.id
+  try {
+    await $fetch(`/api/admin/users/${u.id}`, { method: 'DELETE' })
+    await refreshUsers()
+  } catch (e: any) {
+    alert(e.data?.statusMessage || 'No se pudo eliminar')
+  }
+  busyId.value = null
+}
 
 // Create user (admin-only).
 const form = reactive({ username: '', password: '', displayName: '', isAdmin: false })
@@ -138,10 +176,36 @@ function matchLabel(p: any) {
       <div v-for="u in usersData?.users" :key="u.id" class="ucard card">
         <details>
           <summary>
-            <span class="uname">{{ u.displayName }}</span>
-            <span v-if="u.isAdmin" class="badge admin">admin</span>
-            <span class="spacer" />
-            <span class="ucount">{{ u.count }} / {{ usersData?.totalMatches }}</span>
+            <template v-if="editingId === u.id">
+              <input
+                :id="`rename-${u.id}`"
+                v-model="editName"
+                class="rename"
+                type="text"
+                maxlength="80"
+                :placeholder="u.username"
+                @click.prevent.stop
+                @keydown.enter.prevent="saveRename(u)"
+                @keydown.esc="cancelRename"
+              />
+              <button class="ibtn ok" title="Guardar" :disabled="busyId === u.id" @click.prevent.stop="saveRename(u)">✓</button>
+              <button class="ibtn" title="Cancelar" :disabled="busyId === u.id" @click.prevent.stop="cancelRename">✕</button>
+            </template>
+            <template v-else>
+              <span class="uname">{{ u.displayName }}</span>
+              <span v-if="u.username !== u.displayName" class="usub">@{{ u.username }}</span>
+              <span v-if="u.isAdmin" class="badge admin">admin</span>
+              <span class="spacer" />
+              <span class="ucount">{{ u.count }} / {{ usersData?.totalMatches }}</span>
+              <button class="ibtn" title="Cambiar nombre" :disabled="busyId === u.id" @click.prevent.stop="startRename(u)">✏️</button>
+              <button
+                v-if="me?.id !== u.id"
+                class="ibtn danger"
+                title="Eliminar usuario"
+                :disabled="busyId === u.id"
+                @click.prevent.stop="removeUser(u)"
+              >🗑</button>
+            </template>
             <span class="chev">▾</span>
           </summary>
           <div v-if="u.predictions.length" class="picks">
@@ -244,8 +308,22 @@ function matchLabel(p: any) {
   display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none;
 }
 .ucard summary::-webkit-details-marker { display: none; }
-.uname { font-weight: 800; }
+.uname { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usub { color: var(--mut); font-size: 12px; font-weight: 600; opacity: .85; flex: 0 0 auto; }
 .badge.admin { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: #f5c842; background: rgba(245, 200, 66, .14); padding: 2px 7px; border-radius: 999px; }
+.ibtn {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  background: transparent; border: 1px solid var(--line); color: var(--mut); transition: .15s;
+}
+.ibtn:hover:not(:disabled) { color: var(--txt); border-color: #3a4150; }
+.ibtn.danger:hover:not(:disabled) { color: #ff6b6b; border-color: #5a2e2e; background: rgba(248, 81, 73, .08); }
+.ibtn.ok { color: var(--good); border-color: #2e5a36; }
+.ibtn:disabled { opacity: .5; cursor: default; }
+.rename {
+  flex: 1 1 160px; min-width: 0; padding: 7px 10px; font-size: 14px; font-weight: 700;
+  background: #0f1116; color: var(--txt); border: 1px solid var(--acc); border-radius: 8px;
+}
 .spacer { flex: 1; }
 .ucount { color: var(--mut); font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
 .chev { color: var(--mut); transition: transform .15s; }
@@ -313,6 +391,7 @@ details[open] .chev { transform: rotate(180deg); }
 .msg.err { color: #ff6b6b; }
 
 @media (max-width: 560px) {
+  .usub { display: none; }
   .pick { grid-template-columns: 48px 1fr auto; }
   .row { grid-template-columns: 44px 1fr auto 1fr; }
   .row .status { display: none; }

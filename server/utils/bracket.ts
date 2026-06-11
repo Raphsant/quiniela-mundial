@@ -65,7 +65,8 @@ interface KnockoutOpts {
   groupSettled: (g: string) => boolean // may this group's pos-slots be read yet?
   groupPos: Record<string, string[]> // group → final team order (1st first)
   qualifiedThirds: { group: string; name: string }[] | null // null until knowable
-  advance: (m: any) => 'H' | 'A' | null // which side goes through (teams known)
+  // Which side goes through; called only once both teams are known.
+  advance: (m: any, home: string, away: string) => 'H' | 'A' | null
   refLabels?: boolean // "Ganador R32-01" instead of plain "Ganador"
 }
 
@@ -110,7 +111,7 @@ export function resolveKnockout({ koMatches, groupSettled, groupPos, qualifiedTh
     let winner: string | null = null
     let loser: string | null = null
     if (home.team && away.team) {
-      const side = advance(m)
+      const side = advance(m, home.team, away.team)
       if (side === 'H') { winner = home.team; loser = away.team }
       else if (side === 'A') { winner = away.team; loser = home.team }
     }
