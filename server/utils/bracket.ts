@@ -22,14 +22,40 @@ export interface ResolvedKo {
   loser: string | null
 }
 
-// Deterministic perfect matching (Kuhn's) of qualifying 3rd-placed teams to the
-// eight Round-of-32 "third" slots, honouring each slot's allowed group set.
-// FIFA resolves this from a 495-row table; this produces a valid, stable
-// assignment (a third's exact slot may differ from the official table).
+// FIFA's official allocation of the eight best third-placed teams to the
+// Round-of-32 slots is a fixed lookup keyed by WHICH groups' thirds qualify
+// (one row per 8-of-12 combination). The generic Kuhn's matching below finds
+// *a* valid assignment but not necessarily FIFA's, so for the combination
+// actually in play we pin the official rows. Key: sorted qualifying-group
+// letters → { R32 match code: source group }.
+export const OFFICIAL_THIRD_SLOTS: Record<string, Record<string, string>> = {
+  // 2026 finals: thirds of B,D,E,F,I,J,K,L advance (A,C,G,H eliminated).
+  'B,D,E,F,I,J,K,L': {
+    'R32-01': 'D', 'R32-02': 'F', 'R32-07': 'B', 'R32-08': 'I',
+    'R32-11': 'E', 'R32-12': 'K', 'R32-15': 'J', 'R32-16': 'L',
+  },
+}
+
+// Match qualifying 3rd-placed teams to the eight Round-of-32 "third" slots. Uses
+// FIFA's official table for the qualifying combination when known; otherwise a
+// deterministic perfect matching (Kuhn's) honouring each slot's allowed groups
+// (valid and stable, but a third's exact slot may differ from FIFA's).
 export function matchThirds(
   thirds: { group: string; name: string }[],
   slots: { key: string; groups: string[] }[],
 ): Record<string, string> {
+  // Official FIFA assignment for this exact qualifying-group combination, if known.
+  const official = OFFICIAL_THIRD_SLOTS[[...new Set(thirds.map((t) => t.group))].sort().join(',')]
+  if (official) {
+    const nameByGroup = new Map(thirds.map((t) => [t.group, t.name]))
+    const out: Record<string, string> = {}
+    for (const s of slots) {
+      const name = nameByGroup.get(official[s.key.split(':')[0]] ?? '')
+      if (name) out[s.key] = name
+    }
+    if (Object.keys(out).length === slots.length) return out // every slot filled → trust it
+  }
+
   const left = [...thirds].sort((a, b) => a.group.localeCompare(b.group))
   const slotOf = new Array(slots.length).fill(-1) // slot index -> left index
   const can = (li: number, si: number) => slots[si].groups.includes(left[li].group)
