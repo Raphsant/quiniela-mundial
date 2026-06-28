@@ -16,6 +16,7 @@ async function logout() {
         <NuxtLink to="/">Pronósticos</NuxtLink>
         <NuxtLink to="/avanzan">¿Quién avanza?</NuxtLink>
         <NuxtLink to="/bracket">Cuadro</NuxtLink>
+        <NuxtLink to="/comparar">Tú vs Real</NuxtLink>
         <NuxtLink to="/comunidad">Comunidad</NuxtLink>
         <NuxtLink to="/standings">Tabla</NuxtLink>
         <NuxtLink to="/reglas">Reglas</NuxtLink>
