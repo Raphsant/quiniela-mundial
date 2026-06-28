@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { getTeam } from '~/utils/teams'
 
+definePageMeta({ middleware: 'legacy-ko-hidden' })
 const { loggedIn } = useUserSession()
 const selected = ref<string>('')
 const { data, refresh } = await useFetch('/api/compare', {

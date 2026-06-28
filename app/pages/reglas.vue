@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Static explainer — no data/DB needed.
 useHead({ title: 'Cómo se juega · Quiniela Mundial 2026' })
+// When the new scoreline knockout bracket is on, the rules differ for eliminatorias.
+const newKo = useRuntimeConfig().public.newKo
 </script>
 
 <template>
@@ -31,13 +33,22 @@ useHead({ title: 'Cómo se juega · Quiniela Mundial 2026' })
           <span class="opt">Gana visitante</span>
         </div>
       </div>
-      <div class="card">
+      <div v-if="!newKo" class="card">
         <span class="tag">Eliminatorias</span>
         <p>Tocas al equipo que crees que <strong>avanza</strong> en cada llave — desde 16avos hasta la final.</p>
         <div class="seg">
           <span class="opt win">🏆 Tu ganador</span>
           <span class="opt vs">vs</span>
           <span class="opt">El otro</span>
+        </div>
+      </div>
+      <div v-else class="card">
+        <span class="tag">Eliminatorias</span>
+        <p>Con los <strong>equipos que realmente clasificaron</strong>, predices el <strong>marcador</strong> de cada llave — desde 16avos hasta la final.</p>
+        <div class="seg">
+          <span class="opt">🏠 2</span>
+          <span class="opt vs">–</span>
+          <span class="opt">1 ✈️</span>
         </div>
       </div>
     </div>
@@ -48,27 +59,59 @@ useHead({ title: 'Cómo se juega · Quiniela Mundial 2026' })
 
     <!-- Scoring -->
     <h2 class="sec">2 · Puntuación</h2>
-    <div class="grid2">
-      <div class="card score hit">
-        <div class="pts">+1</div>
-        <div>
-          <strong>Acierto</strong>
-          <p>Predijiste el resultado correcto (local / empate / visitante).</p>
+
+    <!-- Legacy: 1 point per correct outcome everywhere -->
+    <template v-if="!newKo">
+      <div class="grid2">
+        <div class="card score hit">
+          <div class="pts">+1</div>
+          <div>
+            <strong>Acierto</strong>
+            <p>Predijiste el resultado correcto (local / empate / visitante).</p>
+          </div>
+        </div>
+        <div class="card score miss">
+          <div class="pts">0</div>
+          <div>
+            <strong>Fallo</strong>
+            <p>El resultado fue otro. Sin penalización, simplemente no suma.</p>
+          </div>
         </div>
       </div>
-      <div class="card score miss">
-        <div class="pts">0</div>
-        <div>
-          <strong>Fallo</strong>
-          <p>El resultado fue otro. Sin penalización, simplemente no suma.</p>
+      <p class="note">
+        Cuenta <strong>el resultado, no el marcador</strong>: da igual si fue 1-0 o 3-0, si dijiste “gana
+        local” y ganó el local, es <strong>acierto</strong>. Cada partido vale lo mismo: <strong>1 punto</strong>
+        — los 72 de grupos y los 32 de eliminatorias.
+      </p>
+    </template>
+
+    <!-- New: groups 1 pt; knockout scorelines 2 / 1 -->
+    <template v-else>
+      <p class="note" style="margin-top:0">
+        <strong>Fase de grupos:</strong> 1 punto por acertar el resultado (local / empate / visitante) — igual que siempre. Tus puntos de grupos <strong>se conservan</strong>.
+      </p>
+      <h3 class="sub">Eliminatorias (nuevo cuadro)</h3>
+      <div class="grid2">
+        <div class="card score hit">
+          <div class="pts">+2</div>
+          <div>
+            <strong>Marcador exacto</strong>
+            <p>Acertaste los goles de ambos equipos (p. ej. dijiste 2-1 y fue 2-1).</p>
+          </div>
+        </div>
+        <div class="card score win">
+          <div class="pts">+1</div>
+          <div>
+            <strong>Solo el ganador</strong>
+            <p>No acertaste el marcador, pero sí <strong>quién avanza</strong> (en penales, quien elegiste).</p>
+          </div>
         </div>
       </div>
-    </div>
-    <p class="note">
-      Cuenta <strong>el resultado, no el marcador</strong>: da igual si fue 1-0 o 3-0, si dijiste “gana
-      local” y ganó el local, es <strong>acierto</strong>. Cada partido vale lo mismo: <strong>1 punto</strong>
-      — los 72 de grupos y los 32 de eliminatorias.
-    </p>
+      <p class="note">
+        Si fallas el ganador, 0 puntos. El cuadro usa los <strong>equipos que realmente clasificaron</strong>;
+        tus pronósticos viejos de eliminatorias <strong>ya no suman</strong> — solo cuenta este nuevo cuadro.
+      </p>
+    </template>
 
     <!-- Standings -->
     <h2 class="sec">3 · La tabla</h2>
@@ -93,15 +136,17 @@ useHead({ title: 'Cómo se juega · Quiniela Mundial 2026' })
       </div>
       <div class="card">
         <span class="tag">🏆 El cuadro</span>
-        <p>Esos clasificados <strong>rellenan el cuadro</strong> automáticamente. Luego eliges los ganadores
+        <p v-if="!newKo">Esos clasificados <strong>rellenan el cuadro</strong> automáticamente. Luego eliges los ganadores
         ronda por ronda hasta coronar a tu campeón.</p>
-        <NuxtLink class="link" to="/bracket">Ir al cuadro →</NuxtLink>
+        <p v-else>Con los clasificados reales, predices el <strong>marcador</strong> de cada llave; tus ganadores
+        avanzan ronda por ronda hasta tu campeón.</p>
+        <NuxtLink class="link" :to="newKo ? '/eliminatorias' : '/bracket'">Ir al cuadro →</NuxtLink>
       </div>
     </div>
 
     <!-- Example -->
     <h2 class="sec">Ejemplo</h2>
-    <div class="card example">
+    <div v-if="!newKo" class="card example">
       <div class="ex-row">
         <span class="ex-q">Pronosticaste:</span>
         <span class="ex-pick">🇲🇽 Gana México</span>
@@ -111,6 +156,18 @@ useHead({ title: 'Cómo se juega · Quiniela Mundial 2026' })
         <div class="ex-case ok"><span>México gana 1-0</span><b class="g">+1 ✓</b></div>
         <div class="ex-case no"><span>Empatan 1-1</span><b class="r">0</b></div>
         <div class="ex-case no"><span>Pierde México</span><b class="r">0</b></div>
+      </div>
+    </div>
+    <div v-else class="card example">
+      <div class="ex-row">
+        <span class="ex-q">Pronosticaste (eliminatorias):</span>
+        <span class="ex-pick">🇲🇽 México 2 – 1 🇧🇷</span>
+      </div>
+      <div class="ex-cases">
+        <div class="ex-case ok"><span>Fue México 2-1</span><b class="g">+2 ✓</b></div>
+        <div class="ex-case ok"><span>Fue México 3-0</span><b class="g">+1 ✓</b></div>
+        <div class="ex-case no"><span>Empatan y pasa Brasil</span><b class="r">0</b></div>
+        <div class="ex-case no"><span>Gana Brasil 1-0</span><b class="r">0</b></div>
       </div>
     </div>
 
@@ -150,8 +207,11 @@ useHead({ title: 'Cómo se juega · Quiniela Mundial 2026' })
 .score .pts { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 52px; text-align: center; }
 .score.hit { border-color: #2e5a36; }
 .score.hit .pts { color: var(--good); }
+.score.win { border-color: #3a4a72; }
+.score.win .pts { color: #8b95f7; }
 .score.miss .pts { color: #6b7280; }
 .score strong { display: block; margin-bottom: 2px; }
+.sub { font-size: 14px; margin: 16px 0 8px; color: var(--txt); }
 
 /* ranking list */
 .rank { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }

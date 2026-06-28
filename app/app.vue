@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { loggedIn, user, clear } = useUserSession()
+const newKo = useRuntimeConfig().public.newKo
 
 async function logout() {
   await $fetch('/api/auth/logout', { method: 'POST' })
@@ -15,8 +16,9 @@ async function logout() {
       <nav>
         <NuxtLink to="/">Pronósticos</NuxtLink>
         <NuxtLink to="/avanzan">¿Quién avanza?</NuxtLink>
-        <NuxtLink to="/bracket">Cuadro</NuxtLink>
-        <NuxtLink to="/comparar">Tú vs Real</NuxtLink>
+        <NuxtLink v-if="newKo" to="/eliminatorias">Cuadro</NuxtLink>
+        <NuxtLink v-if="!newKo" to="/bracket">Cuadro</NuxtLink>
+        <NuxtLink v-if="!newKo" to="/comparar">Tú vs Real</NuxtLink>
         <NuxtLink to="/comunidad">Comunidad</NuxtLink>
         <NuxtLink to="/standings">Tabla</NuxtLink>
         <NuxtLink to="/reglas">Reglas</NuxtLink>

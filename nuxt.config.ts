@@ -22,10 +22,20 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     scoring: {
-      hit: 1, // NUXT_SCORING_HIT — points per correct 1/X/2 pick
+      hit: 1, // NUXT_SCORING_HIT — points per correct 1/X/2 pick (group stage)
+      koExact: 2, // NUXT_SCORING_KO_EXACT — new bracket: exact knockout scoreline
+      koWinner: 1, // NUXT_SCORING_KO_WINNER — new bracket: correct knockout winner only
     },
     // Session sealing password comes from NUXT_SESSION_PASSWORD (>= 32 chars).
     // Passwords are hashed with scrypt via nuxt-auth-utils (auth.hash.scrypt).
+    public: {
+      // Feature flag for the scoreline-based knockout bracket built on the ACTUAL
+      // qualified teams. OFF (default) = original behavior (old /bracket + /comparar
+      // visible, knockout scored from old picks). Set NUXT_PUBLIC_NEW_KO=true to
+      // open the new bracket, hide the old pages, and score knockout from scorelines.
+      // Flip the env var + restart to enable or fully revert — no data is touched.
+      newKo: false,
+    },
   },
 
   // Netlify/Vercel are auto-detected. For a self-hosted Node server (Docker),

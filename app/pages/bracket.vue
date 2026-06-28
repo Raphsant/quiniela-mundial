@@ -1,4 +1,5 @@
 <script setup lang="ts">
+definePageMeta({ middleware: 'legacy-ko-hidden' })
 const { loggedIn } = useUserSession()
 const { data, refresh } = await useFetch('/api/bracket')
 const saving = ref<string | null>(null)
