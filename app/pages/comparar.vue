@@ -34,47 +34,40 @@ const rows = computed(() => data.value?.rows || [])
 
 // ── Per-match comparison helpers ──────────────────────────────────────────────
 // One side of a match: prefer the REAL team; fall back to the prediction while
-// reality is still unknown; otherwise the structural slot label.
+// reality is unknown, so the slot stays a placeholder (e.g. "Ganador QF-01").
+// The player's prediction is NEVER shown here — it lives in the subtext instead.
 function cell(row: any, side: 'home' | 'away') {
   const a = row.actual?.[side]
-  const p = row.predicted?.[side]
-  if (a?.team) return { team: a.team, mode: 'real', label: a.label }
-  if (p?.team) return { team: p.team, mode: 'pred', label: p.label }
-  return { team: null, mode: 'tbd', label: a?.label || p?.label || 'Por definir' }
+  if (a?.team) return { team: a.team, label: a.label }
+  return { team: null, label: a?.label || 'Por definir' }
 }
+// This real team is the one that actually went through.
+function advancer(row: any, side: 'home' | 'away') {
+  const c = cell(row, side)
+  return !!(c.team && row.actual?.winner && row.actual.winner === c.team)
+}
+const predWinner = (row: any) => row.predicted?.winner || null
+const predHome = (row: any) => row.predicted?.home?.team || null
+const predAway = (row: any) => row.predicted?.away?.team || null
+const realKnown = (row: any) => !!(row.actual?.home?.team && row.actual?.away?.team)
+
 // Did the player's predicted advancer match who actually went through?
 function winnerVerdict(row: any): 'hit' | 'miss' | null {
-  if (!row.actual?.winner || !row.predicted?.winner) return null
-  return row.predicted.winner === row.actual.winner ? 'hit' : 'miss'
-}
-// Mark on a real-team row: ✓ player nailed the pass, ✗ they backed this team but
-// it's out, ➜ this team advanced (player picked someone else), '' otherwise.
-function sideMark(row: any, side: 'home' | 'away') {
-  const c = cell(row, side)
-  if (c.mode !== 'real' || !row.actual?.winner) return ''
-  const backed = row.predicted?.winner && row.predicted.winner === c.team
-  if (row.actual.winner === c.team) return backed ? '✓' : '➜'
-  return backed ? '✗' : ''
-}
-function sideClass(row: any, side: 'home' | 'away') {
-  const c = cell(row, side)
-  const adv = c.mode === 'real' && row.actual?.winner === c.team
-  const backed = row.predicted?.winner && row.predicted.winner === c.team
-  return {
-    pred: c.mode === 'pred',
-    tbd: c.mode === 'tbd',
-    adv,
-    hit: adv && backed,
-    miss: backed && row.actual?.winner && row.actual.winner !== c.team,
-  }
+  if (!row.actual?.winner || !predWinner(row)) return null
+  return predWinner(row) === row.actual.winner ? 'hit' : 'miss'
 }
 // The two teams the player sent here differ from who actually arrived?
 function matchupDiffers(row: any) {
-  if (!row.actual?.home?.team || !row.actual?.away?.team) return false
+  if (!realKnown(row)) return false
   const real = [row.actual.home.team, row.actual.away.team].sort()
-  const pred = [row.predicted?.home?.team, row.predicted?.away?.team].filter(Boolean).sort()
+  const pred = [predHome(row), predAway(row)].filter(Boolean).sort()
   if (pred.length < 2) return false
   return real[0] !== pred[0] || real[1] !== pred[1]
+}
+// Show the predicted pairing as subtext when it adds something: the slots aren't
+// filled yet, or the real teams differ from who the player predicted.
+function showPredPair(row: any) {
+  return !!(predHome(row) && predAway(row) && (!realKnown(row) || matchupDiffers(row)))
 }
 function rowHasDiff(row: any) {
   return matchupDiffers(row) || winnerVerdict(row) === 'miss'
@@ -187,7 +180,7 @@ function shortDay(d: string, tz?: string) {
           <span>Solo diferencias</span>
         </label>
         <span class="legend">
-          <span class="lg adv">➜ avanzó</span>
+          <span class="lg"><i class="sw adv" />clasificado</span>
           <span class="lg hit">✓ acertaste</span>
           <span class="lg miss">✗ fallaste</span>
         </span>
@@ -214,19 +207,35 @@ function shortDay(d: string, tz?: string) {
           <div v-for="m in col.games" :key="m.code" class="seed">
             <div class="game card" :class="['v-' + (winnerVerdict(m) || 'none')]">
               <div class="g-meta">{{ shortDay(m.kickoffAt, m.venue?.tz) }} · {{ m.venue?.city }}</div>
-              <div v-for="side in (['home','away'] as const)" :key="side" class="g-team" :class="sideClass(m, side)">
-                <span class="fl">{{ flag(cell(m, side).team) }}</span>
-                <span class="nm" :class="{ slot: !cell(m, side).team }">{{ cell(m, side).team || cell(m, side).label }}</span>
-                <span class="mark">{{ sideMark(m, side) }}</span>
+
+              <!-- Reality: the actual teams, or a placeholder slot while undefined -->
+              <div
+                v-for="side in (['home','away'] as const)"
+                :key="side"
+                class="g-team"
+                :class="{ adv: advancer(m, side), tbd: !cell(m, side).team }"
+              >
+                <template v-if="cell(m, side).team">
+                  <span class="fl">{{ flag(cell(m, side).team) }}</span>
+                  <span class="nm">{{ cell(m, side).team }}</span>
+                  <span v-if="advancer(m, side)" class="mark">›</span>
+                </template>
+                <span v-else class="slot">{{ cell(m, side).label }}</span>
               </div>
 
-              <!-- Where your bracket diverged -->
-              <div v-if="matchupDiffers(m)" class="cmp">
-                🔮 Tu llave: {{ m.predicted.home.team }} <span class="x">vs</span> {{ m.predicted.away.team }}
-              </div>
-              <!-- Your pass, before reality decides -->
-              <div v-else-if="!m.actual?.winner && m.predicted?.winner" class="cmp pend">
-                Tu pase: <strong>{{ m.predicted.winner }}</strong>
+              <!-- Your prediction, as subtext -->
+              <div v-if="predWinner(m) || showPredPair(m)" class="pred">
+                <div v-if="showPredPair(m)" class="pp-pair">
+                  <span class="pp-tag">🔮 Tu llave</span>
+                  <span :class="{ w: predWinner(m) === predHome(m) }">{{ predHome(m) }}</span>
+                  <span class="x">vs</span>
+                  <span :class="{ w: predWinner(m) === predAway(m) }">{{ predAway(m) }}</span>
+                </div>
+                <div class="pp-pass" :class="winnerVerdict(m) || 'pend'">
+                  <template v-if="winnerVerdict(m) === 'hit'">✓ Acertaste: pasa {{ m.actual.winner }}</template>
+                  <template v-else-if="winnerVerdict(m) === 'miss'">✗ Tú: {{ predWinner(m) }} · pasó {{ m.actual.winner }}</template>
+                  <template v-else-if="predWinner(m)">Tu pase: <strong>{{ predWinner(m) }}</strong></template>
+                </div>
               </div>
             </div>
           </div>
@@ -244,10 +253,31 @@ function shortDay(d: string, tz?: string) {
         <div class="tp-main">
           <span class="tp-lbl">Tercer puesto · {{ shortDay(thirdPlace.kickoffAt, thirdPlace.venue?.tz) }}</span>
           <div class="tp-row">
-            <div v-for="side in (['home','away'] as const)" :key="side" class="g-team" :class="sideClass(thirdPlace, side)">
-              <span class="fl">{{ flag(cell(thirdPlace, side).team) }}</span>
-              <span class="nm" :class="{ slot: !cell(thirdPlace, side).team }">{{ cell(thirdPlace, side).team || cell(thirdPlace, side).label }}</span>
-              <span class="mark">{{ sideMark(thirdPlace, side) }}</span>
+            <div
+              v-for="side in (['home','away'] as const)"
+              :key="side"
+              class="g-team"
+              :class="{ adv: advancer(thirdPlace, side), tbd: !cell(thirdPlace, side).team }"
+            >
+              <template v-if="cell(thirdPlace, side).team">
+                <span class="fl">{{ flag(cell(thirdPlace, side).team) }}</span>
+                <span class="nm">{{ cell(thirdPlace, side).team }}</span>
+                <span v-if="advancer(thirdPlace, side)" class="mark">›</span>
+              </template>
+              <span v-else class="slot">{{ cell(thirdPlace, side).label }}</span>
+            </div>
+          </div>
+          <div v-if="predWinner(thirdPlace) || showPredPair(thirdPlace)" class="pred">
+            <div v-if="showPredPair(thirdPlace)" class="pp-pair">
+              <span class="pp-tag">🔮 Tu llave</span>
+              <span :class="{ w: predWinner(thirdPlace) === predHome(thirdPlace) }">{{ predHome(thirdPlace) }}</span>
+              <span class="x">vs</span>
+              <span :class="{ w: predWinner(thirdPlace) === predAway(thirdPlace) }">{{ predAway(thirdPlace) }}</span>
+            </div>
+            <div class="pp-pass" :class="winnerVerdict(thirdPlace) || 'pend'">
+              <template v-if="winnerVerdict(thirdPlace) === 'hit'">✓ Acertaste: pasa {{ thirdPlace.actual.winner }}</template>
+              <template v-else-if="winnerVerdict(thirdPlace) === 'miss'">✗ Tú: {{ predWinner(thirdPlace) }} · pasó {{ thirdPlace.actual.winner }}</template>
+              <template v-else-if="predWinner(thirdPlace)">Tu pase: <strong>{{ predWinner(thirdPlace) }}</strong></template>
             </div>
           </div>
         </div>
@@ -298,9 +328,10 @@ function shortDay(d: string, tz?: string) {
 .toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; background: var(--card); border: 1px solid var(--line); padding: 7px 13px; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--mut); transition: .15s; }
 .toggle.on { color: #fff; border-color: var(--acc); background: rgba(88,101,242,.16); }
 .toggle input { accent-color: var(--acc); }
-.legend { display: flex; gap: 12px; flex-wrap: wrap; }
-.lg { font-size: 11.5px; font-weight: 700; }
-.lg.adv { color: var(--txt); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.lg { font-size: 11.5px; font-weight: 700; color: var(--mut); display: inline-flex; align-items: center; gap: 5px; }
+.lg .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.lg .sw.adv { background: #1b2740; border: 1.5px solid #3f5680; }
 .lg.hit { color: var(--good); }
 .lg.miss { color: #f85149; }
 
@@ -319,26 +350,27 @@ function shortDay(d: string, tz?: string) {
 .game.v-miss { border-color: #5a2e2e; }
 .g-meta { font-size: 10px; color: #6b7280; padding: 0 2px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* team rows = reality only */
 .g-team { display: flex; align-items: center; gap: 8px; width: 100%; background: #0f1116; color: var(--txt); border: 1.5px solid transparent; border-radius: 9px; padding: 7px 9px; min-height: 38px; }
 .g-team .fl { font-size: 18px; flex: 0 0 auto; }
 .g-team .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 13.5px; }
-.g-team .nm.slot { color: var(--mut); font-style: italic; font-weight: 600; font-size: 12px; }
-.g-team .mark { flex: 0 0 auto; width: 15px; font-weight: 900; text-align: center; color: var(--mut); }
-.g-team.adv { background: #131720; border-color: #3a4256; }
-.g-team.adv .nm { color: #fff; }
-.g-team.pred { border-style: dashed; border-color: var(--line); opacity: .8; }
-.g-team.pred .nm { font-style: italic; color: var(--mut); }
+.g-team .slot { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mut); font-style: italic; font-weight: 600; font-size: 12px; }
+.g-team .mark { flex: 0 0 auto; width: 14px; font-weight: 900; text-align: center; color: #6f86b8; font-size: 16px; }
+.g-team.adv { background: #131c2e; border-color: #34507e; } /* the team that actually advanced */
+.g-team.adv .nm { color: #fff; font-weight: 800; }
 .g-team.tbd { background: transparent; border-style: dashed; border-color: var(--line); }
-.g-team.hit { background: rgba(63, 185, 80, .16); border-color: var(--good); }
-.g-team.hit .nm { color: #d6ffd9; }
-.g-team.hit .mark { color: var(--good); }
-.g-team.miss { background: rgba(248, 81, 73, .14); border-color: #f85149; }
-.g-team.miss .mark { color: #f85149; }
 
-.cmp { font-size: 11px; color: var(--mut); padding: 2px 3px 0; line-height: 1.35; }
-.cmp .x { color: #4a5160; font-weight: 700; }
-.cmp.pend { color: #8a93a3; }
-.cmp.pend strong { color: var(--txt); }
+/* prediction shown as subtext beneath reality */
+.pred { border-top: 1px dashed #232936; margin-top: 3px; padding: 5px 3px 1px; display: flex; flex-direction: column; gap: 3px; }
+.pp-pair { font-size: 11px; color: var(--mut); line-height: 1.3; }
+.pp-pair .pp-tag { color: #8a93a3; font-weight: 700; margin-right: 3px; }
+.pp-pair .w { color: var(--txt); font-weight: 800; }
+.pp-pair .x { color: #4a5160; font-weight: 700; margin: 0 2px; }
+.pp-pass { font-size: 11.5px; font-weight: 700; line-height: 1.3; }
+.pp-pass.pend { color: #8a93a3; font-weight: 600; }
+.pp-pass.pend strong { color: var(--txt); font-weight: 800; }
+.pp-pass.hit { color: var(--good); }
+.pp-pass.miss { color: #f8908a; }
 
 /* third place */
 .third { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-top: 18px; }
