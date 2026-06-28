@@ -96,20 +96,21 @@ const newKo = useRuntimeConfig().public.newKo
           <div class="pts">+2</div>
           <div>
             <strong>Marcador exacto</strong>
-            <p>Acertaste los goles de ambos equipos (p. ej. dijiste 2-1 y fue 2-1).</p>
+            <p>Acertaste <strong>los dos equipos</strong> de la llave <strong>y</strong> el marcador exacto (p. ej. dijiste México 2-1 y fue México 2-1).</p>
           </div>
         </div>
         <div class="card score win">
           <div class="pts">+1</div>
           <div>
-            <strong>Solo el ganador</strong>
-            <p>No acertaste el marcador, pero sí <strong>quién avanza</strong> (en penales, quien elegiste).</p>
+            <strong>El equipo que avanza</strong>
+            <p>El equipo que pusiste a avanzar <strong>realmente avanzó</strong>, aunque el rival o el marcador hayan sido otros.</p>
           </div>
         </div>
       </div>
       <p class="note">
-        Si fallas el ganador, 0 puntos. El cuadro usa los <strong>equipos que realmente clasificaron</strong>;
-        tus pronósticos viejos de eliminatorias <strong>ya no suman</strong> — solo cuenta este nuevo cuadro.
+        Si el que avanza no es tu equipo, 0 puntos. En 16avos los equipos ya están fijos; en las rondas
+        siguientes tienes que acertar <strong>qué equipo llega</strong> a cada llave para sumar. Tus pronósticos
+        viejos de eliminatorias <strong>ya no suman</strong> — solo cuenta este nuevo cuadro.
       </p>
     </template>
 
@@ -165,9 +166,9 @@ const newKo = useRuntimeConfig().public.newKo
       </div>
       <div class="ex-cases">
         <div class="ex-case ok"><span>Fue México 2-1</span><b class="g">+2 ✓</b></div>
-        <div class="ex-case ok"><span>Fue México 3-0</span><b class="g">+1 ✓</b></div>
-        <div class="ex-case no"><span>Empatan y pasa Brasil</span><b class="r">0</b></div>
-        <div class="ex-case no"><span>Gana Brasil 1-0</span><b class="r">0</b></div>
+        <div class="ex-case ok"><span>México avanza (otro marcador o rival)</span><b class="g">+1 ✓</b></div>
+        <div class="ex-case no"><span>Avanzó Brasil</span><b class="r">0</b></div>
+        <div class="ex-case no"><span>México no llegó a esa llave</span><b class="r">0</b></div>
       </div>
     </div>
 

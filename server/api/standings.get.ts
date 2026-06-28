@@ -2,15 +2,20 @@ import { User } from '../models/User'
 import { Match } from '../models/Match'
 import { Prediction } from '../models/Prediction'
 import { KnockoutPrediction } from '../models/KnockoutPrediction'
-import { outcome, scoreKnockout, type Outcome } from '../utils/scoring'
-import { realAdvanceSide } from '../utils/bracket'
+import { outcome, sideFromScore, type Outcome } from '../utils/scoring'
+import { realAdvanceSide, resolveRealBracket, resolveKnockout } from '../utils/bracket'
 
 // Leaderboard. Group matches score on the exact 1/X/2 outcome. Knockout scoring
 // depends on the `newKo` feature flag:
 //   • OFF (legacy): old "who advances" picks (Prediction.outcome H/A) → `hit` pt.
-//   • ON (new bracket): scorelines from KnockoutPrediction → `koExact` for an
-//     exact score, else `koWinner` for the right advancing side. Old knockout
-//     picks are ignored; group-stage points are unchanged (retained) either way.
+//   • ON (new bracket): each user's scoreline predictions, scored after resolving
+//     their OWN bracket so we know which teams they had in each slot:
+//       – koExact  if their predicted teams AND the exact score match the real tie;
+//       – koWinner if the team they sent through is the one that really advanced
+//                  (the opponent may differ);
+//       – 0        if the team they backed isn't the one that advanced.
+//     R32 teams are fixed, so they always match there; later rounds depend on the
+//     user's predicted path. Old knockout picks are ignored; group points retained.
 // A level knockout score with no advancer isn't scoreable yet and is skipped.
 export default defineEventHandler(async () => {
   const rc = useRuntimeConfig()
@@ -70,23 +75,61 @@ export default defineEventHandler(async () => {
     }
   }
 
-  // New knockout bracket: score scorelines against finished knockout results.
+  // New knockout bracket: score each user's scorelines against finished results.
+  // We resolve every user's predicted bracket (real R32 teams; their predicted
+  // winners propagate) so we know the teams they had in each slot, then award by
+  // team identity — not just slot position.
   if (newKo) {
+    const groupMatches = matches.filter((m: any) => m.stage === 'group')
+    const koMatchesArr = matches.filter((m: any) => m.stage !== 'group')
+    const real = resolveRealBracket(groupMatches, koMatchesArr)
+    const realByCode = new Map(real.resolved.map((r) => [r.match.code, r]))
+
+    // Each user's scoreline predictions, grouped by match id.
+    const koByUser = new Map<string, Map<string, any>>()
     for (const p of koPreds as any[]) {
-      const row = table.get(String(p.user))
-      const m: any = matchById.get(String(p.match))
-      if (!row || !m || m.stage === 'group') continue
-      if (m.status !== 'finished' || m.homeGoals == null || m.awayGoals == null) continue
-      if (m.homeGoals === m.awayGoals && !m.advancer) continue // penalties result not entered yet
-      row.played += 1
-      const gained = scoreKnockout(
-        { homeGoals: p.homeGoals, awayGoals: p.awayGoals, advancer: p.advancer },
-        { homeGoals: m.homeGoals, awayGoals: m.awayGoals, advancer: m.advancer },
-        koCfg,
-      )
-      if (gained > 0) {
-        row.aciertos += 1
-        row.points += gained
+      if (!koByUser.has(String(p.user))) koByUser.set(String(p.user), new Map())
+      koByUser.get(String(p.user))!.set(String(p.match), p)
+    }
+
+    for (const [uid, mine] of koByUser) {
+      const row = table.get(uid)
+      if (!row) continue
+      // Resolve THIS user's bracket: real R32 teams + their predicted winners.
+      const myResolved = resolveKnockout({
+        koMatches: koMatchesArr,
+        groupSettled: (g) => !!real.settled[g],
+        groupPos: real.pos,
+        qualifiedThirds: real.qualifiedThirds,
+        advance: (m) => {
+          const p = mine.get(String(m._id))
+          return p ? sideFromScore(p.homeGoals, p.awayGoals, p.advancer) : null
+        },
+      })
+      const myByCode = new Map(myResolved.map((r) => [r.match.code, r]))
+
+      for (const [mid, p] of mine) {
+        const m: any = matchById.get(mid)
+        if (!m || m.stage === 'group') continue
+        if (m.status !== 'finished' || m.homeGoals == null || m.awayGoals == null) continue
+        if (m.homeGoals === m.awayGoals && !m.advancer) continue // penalties not entered yet
+        row.played += 1
+
+        const rr = realByCode.get(m.code) // real teams + winner for this tie
+        const pr = myByCode.get(m.code) // user's predicted teams + winner
+        if (!rr || !pr) continue
+
+        const exactTeams = pr.home.team === rr.home.team && pr.away.team === rr.away.team
+        let gained = 0
+        if (exactTeams && p.homeGoals === m.homeGoals && p.awayGoals === m.awayGoals) {
+          gained = koCfg.exact // both teams + exact score
+        } else if (pr.winner && rr.winner && pr.winner === rr.winner) {
+          gained = koCfg.winner // the team they sent through actually advanced
+        }
+        if (gained > 0) {
+          row.aciertos += 1
+          row.points += gained
+        }
       }
     }
   }

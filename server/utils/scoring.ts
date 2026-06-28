@@ -22,23 +22,6 @@ export function sideFromScore(
   return advancer === 'H' || advancer === 'A' ? advancer : null
 }
 
-// New knockout bracket scoring: exact scoreline beats correct-winner beats miss.
-export interface KoScoreConfig {
-  exact: number // both goal counts correct
-  winner: number // correct advancing side only
-}
-
-export function scoreKnockout(
-  pred: { homeGoals: number; awayGoals: number; advancer?: 'H' | 'A' | null },
-  real: { homeGoals: number; awayGoals: number; advancer?: 'H' | 'A' | null },
-  cfg: KoScoreConfig,
-): number {
-  if (pred.homeGoals === real.homeGoals && pred.awayGoals === real.awayGoals) return cfg.exact
-  const ps = sideFromScore(pred.homeGoals, pred.awayGoals, pred.advancer)
-  const rs = sideFromScore(real.homeGoals, real.awayGoals, real.advancer)
-  return ps && rs && ps === rs ? cfg.winner : 0
-}
-
 export interface ScoreConfig {
   hit: number // points for a correct outcome pick
 }
