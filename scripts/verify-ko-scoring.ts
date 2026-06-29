@@ -48,32 +48,34 @@ async function run() {
   // Three fresh users (dummy hash; standings needs no auth).
   const scrypt = new Scrypt({})
   const hash = await scrypt.make('test1234')
-  async function user(username: string, r32_01: [number, number], r32_02: [number, number], r16_01: [number, number]) {
+  type S = [number, number] | null
+  async function user(username: string, r32_01: S, r32_02: S, r16_01: S) {
     await User.updateOne({ username }, { $set: { passwordHash: hash }, $setOnInsert: { username, displayName: username } }, { upsert: true })
     const u = await User.findOne({ username }).lean()
     const uid = (u as any)._id
     await KnockoutPrediction.deleteMany({ user: uid })
-    await KnockoutPrediction.insertMany([
-      { user: uid, match: id('R32-01'), homeGoals: r32_01[0], awayGoals: r32_01[1], advancer: null },
-      { user: uid, match: id('R32-02'), homeGoals: r32_02[0], awayGoals: r32_02[1], advancer: null },
-      { user: uid, match: id('R16-01'), homeGoals: r16_01[0], awayGoals: r16_01[1], advancer: null },
-    ])
+    const docs: any[] = []
+    if (r32_01) docs.push({ user: uid, match: id('R32-01'), homeGoals: r32_01[0], awayGoals: r32_01[1], advancer: null })
+    if (r32_02) docs.push({ user: uid, match: id('R32-02'), homeGoals: r32_02[0], awayGoals: r32_02[1], advancer: null })
+    if (r16_01) docs.push({ user: uid, match: id('R16-01'), homeGoals: r16_01[0], awayGoals: r16_01[1], advancer: null })
+    if (docs.length) await KnockoutPrediction.insertMany(docs)
   }
 
-  // exact:     R32-01 home, R32-02 home → R16-01 teams match real; score 3-1 = exact.
-  await user('koexact', [2, 1], [2, 1], [3, 1])
-  // rightTeam: R32-01 home (→ R16 home = real winner X), R32-02 AWAY (→ wrong opponent);
-  //            R16-01 home wins 2-0 → right team advanced, wrong opponent, score off → +1.
-  await user('koright', [2, 1], [1, 2], [2, 0])
-  // wrongTeam: R32-01 AWAY (→ R16 home = the team that did NOT advance), R32-02 home;
-  //            R16-01 home wins 3-1 → backed the wrong advancer → 0.
-  await user('kowrong', [1, 2], [2, 1], [3, 1])
+  // The bracket follows REAL results: R16-01's teams are the real R32-01/02 winners
+  // for everyone, so a scoreline is judged against the real fixture (2 exact / 1 winner).
+  await user('koexact', [2, 1], [2, 1], [3, 1]) // R16-01 3-1 = exact → +2
+  await user('koright', [2, 1], [1, 2], [2, 0]) // R16-01 home wins 2-0, not exact → +1
+  await user('kowrong', [1, 2], [2, 1], [3, 1]) // R16-01 3-1 = exact → +2 (teams are real regardless of R32 picks)
+  // "Late" user who never predicted R32-01/02 but can still predict R16-01 because
+  // its teams are the real winners — proves missing early rounds doesn't block you.
+  await user('kolate', null, null, [3, 1]) // only R16-01 = exact → +2
 
-  console.log('Scoring fixture ready. Expected R16-01: koexact +2, koright +1, kowrong 0.')
-  console.log('Expected totals (R32-01 + R32-02 + R16-01):')
-  console.log('  koexact  = 2 + 1 + 2 = 5  (R32-01 exact, R32-02 winner, R16-01 exact)')
-  console.log('  koright  = 2 + 0 + 1 = 3  (R32-01 exact, R32-02 wrong, R16-01 credit-advancer)')
-  console.log('  kowrong  = 0 + 1 + 0 = 1  (R32-01 wrong, R32-02 winner, R16-01 wrong team)')
+  console.log('Scoring fixture ready (bracket follows real results — teams real downstream).')
+  console.log('Expected totals:')
+  console.log('  koexact = 2 + 1 + 2 = 5  (R32-01 exact, R32-02 winner, R16-01 exact)')
+  console.log('  koright = 2 + 0 + 1 = 3  (R32-01 exact, R32-02 miss,   R16-01 winner)')
+  console.log('  kowrong = 0 + 1 + 2 = 3  (R32-01 miss,  R32-02 winner, R16-01 exact)')
+  console.log('  kolate  = 0 + 0 + 2 = 2  (no R32 picks,               R16-01 exact)')
   await mongoose.disconnect()
 }
 

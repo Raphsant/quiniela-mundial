@@ -25,6 +25,10 @@ export default defineNuxtConfig({
       hit: 1, // NUXT_SCORING_HIT — points per correct 1/X/2 pick (group stage)
       koExact: 2, // NUXT_SCORING_KO_EXACT — new bracket: exact knockout scoreline
       koWinner: 1, // NUXT_SCORING_KO_WINNER — new bracket: correct knockout winner only
+      // NUXT_SCORING_KO_VOID — comma-separated match codes excluded from scoring
+      // entirely (no points, not counted as played), e.g. "R32-03". Lets an
+      // organizer neutralise a match nobody could fairly predict. Unset to restore.
+      koVoid: '',
     },
     // Session sealing password comes from NUXT_SESSION_PASSWORD (>= 32 chars).
     // Passwords are hashed with scrypt via nuxt-auth-utils (auth.hash.scrypt).

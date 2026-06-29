@@ -1,16 +1,23 @@
 import { Match } from '../models/Match'
 import { User } from '../models/User'
 import { KnockoutPrediction } from '../models/KnockoutPrediction'
-import { realGroupTables, resolveKnockout } from '../utils/bracket'
+import { realGroupTables, resolveKnockout, realAdvanceSide } from '../utils/bracket'
 import { sideFromScore } from '../utils/scoring'
 
-// The logged-in user's NEW knockout bracket: the Round of 32 is filled with the
-// ACTUAL qualified teams (from real group results), and the user's predicted
-// SCORELINES propagate their predicted winners forward round by round.
+// The logged-in user's NEW knockout bracket. The Round of 32 is filled with the
+// ACTUAL qualified teams. Each tie then advances by REAL result once it's played
+// (so already-decided ties show the real winner to everyone and never block the
+// rounds below them), and by the user's predicted scoreline for ties not yet
+// played — letting anyone complete the whole bracket regardless of what they
+// caught in time.
 export default defineEventHandler(async (event) => {
-  if (!useRuntimeConfig().public.newKo) {
+  const rc = useRuntimeConfig()
+  if (!rc.public.newKo) {
     throw createError({ statusCode: 404, statusMessage: 'No disponible' })
   }
+  const voidCodes = new Set(
+    String(rc.scoring.koVoid || '').split(',').map((s) => s.trim()).filter(Boolean),
+  )
 
   const session = await getUserSession(event)
   let dbUser: any = null
@@ -31,13 +38,17 @@ export default defineEventHandler(async (event) => {
     for (const p of preds as any[]) predByMatch.set(String(p.match), p)
   }
 
-  // Fill the bracket from reality; propagate each tie by the user's predicted score.
+  // Fill the bracket from reality. Played ties advance by their REAL winner (so
+  // they never block the rounds below); unplayed ties advance by the user's
+  // predicted score.
   const resolved = resolveKnockout({
     koMatches,
     groupSettled: (g) => !!tables.settled[g],
     groupPos: tables.pos,
     qualifiedThirds: tables.qualifiedThirds,
     advance: (m) => {
+      const real = realAdvanceSide(m)
+      if (real) return real
       const p = predByMatch.get(String(m._id))
       return p ? sideFromScore(p.homeGoals, p.awayGoals, p.advancer) : null
     },
@@ -46,18 +57,26 @@ export default defineEventHandler(async (event) => {
 
   const now = Date.now()
   const rows = resolved.map((r) => {
-    const p = predByMatch.get(String(r.match._id))
+    const m: any = r.match
+    const p = predByMatch.get(String(m._id))
+    const finished = m.status === 'finished' && m.homeGoals != null && m.awayGoals != null
+    const realSide = finished ? realAdvanceSide(m) : null
     return {
-      _id: String(r.match._id),
-      code: r.match.code,
-      stage: r.match.stage,
-      kickoffAt: r.match.kickoffAt,
-      venue: r.match.venue || null,
+      _id: String(m._id),
+      code: m.code,
+      stage: m.stage,
+      kickoffAt: m.kickoffAt,
+      venue: m.venue || null,
       home: r.home, // { team, label }
       away: r.away,
-      winner: r.winner, // propagated from the predicted scorelines
+      winner: r.winner, // real winner once played, else propagated from the prediction
       pred: p ? { homeGoals: p.homeGoals, awayGoals: p.awayGoals, advancer: p.advancer ?? null } : null,
-      locked: now >= new Date(r.match.kickoffAt).getTime(),
+      locked: now >= new Date(m.kickoffAt).getTime(),
+      voided: voidCodes.has(m.code), // excluded from scoring
+      // Real result once the tie is played, so locked ties can show what happened.
+      result: finished
+        ? { homeGoals: m.homeGoals, awayGoals: m.awayGoals, winner: realSide === 'H' ? r.home.team : realSide === 'A' ? r.away.team : null }
+        : null,
     }
   })
 

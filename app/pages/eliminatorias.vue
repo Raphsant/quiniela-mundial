@@ -43,6 +43,12 @@ const isLevel = (m: any) => {
   const d = draft[m.code]
   return d && d.h != null && d.a != null && d.h === d.a
 }
+// Highlight the real winner once a tie is played; otherwise the user's pick.
+function advHighlight(m: any, side: 'home' | 'away') {
+  const team = side === 'home' ? m.home?.team : m.away?.team
+  if (m.result?.winner) return m.result.winner === team
+  return bothKnown(m) && sideOf(draft[m.code]) === (side === 'home' ? 'H' : 'A')
+}
 
 const saving = ref<string | null>(null)
 const timers: Record<string, any> = {}
@@ -161,84 +167,91 @@ function shortDay(d: string, tz?: string) {
         <div v-for="col in columns" v-show="!isMobile || mobileRound === col.key" :key="col.key" class="round">
           <div class="rhead">{{ col.label }}</div>
           <div v-for="m in col.games" :key="m.code" class="seed">
-            <div class="game card" :class="{ saving: saving === m.code, locked: m.locked }">
+            <div class="game card" :class="{ saving: saving === m.code, locked: m.locked, voided: m.voided }">
               <div class="g-meta">
                 {{ shortDay(m.kickoffAt, m.venue?.tz) }} · {{ m.venue?.city }}
                 <span v-if="m.locked" class="lk">🔒</span>
+                <span v-if="m.voided" class="void-tag">no cuenta</span>
               </div>
 
               <div
                 v-for="side in (['home','away'] as const)"
                 :key="side"
                 class="g-team"
-                :class="{ adv: bothKnown(m) && sideOf(draft[m.code]) === (side === 'home' ? 'H' : 'A'), tbd: !m[side].team }"
+                :class="{ adv: advHighlight(m, side), tbd: !m[side].team }"
               >
                 <span class="fl">{{ flag(m[side].team) }}</span>
                 <span class="nm" :class="{ slot: !m[side].team }">{{ m[side].team || m[side].label }}</span>
-                <div v-if="bothKnown(m)" class="stepper">
-                  <button class="st" :disabled="m.locked" @click="bump(m, side === 'home' ? 'h' : 'a', -1)">−</button>
+                <!-- Open tie: predict the score. Played/locked tie: show the result. -->
+                <div v-if="bothKnown(m) && !m.locked && !m.result" class="stepper">
+                  <button class="st" @click="bump(m, side === 'home' ? 'h' : 'a', -1)">−</button>
                   <input
                     class="gin"
                     type="number"
                     inputmode="numeric"
                     min="0"
                     max="99"
-                    :disabled="m.locked"
                     :value="draft[m.code]?.[side === 'home' ? 'h' : 'a'] ?? ''"
                     @input="onInput(m, side === 'home' ? 'h' : 'a', $event)"
                   />
-                  <button class="st" :disabled="m.locked" @click="bump(m, side === 'home' ? 'h' : 'a', 1)">+</button>
+                  <button class="st" @click="bump(m, side === 'home' ? 'h' : 'a', 1)">+</button>
                 </div>
+                <span v-else-if="m.result" class="rg">{{ side === 'home' ? m.result.homeGoals : m.result.awayGoals }}</span>
               </div>
 
-              <!-- Penalties: who advances on a level score -->
-              <div v-if="bothKnown(m) && isLevel(m)" class="advpick">
+              <!-- Penalties: who advances on a level predicted score (open ties only) -->
+              <div v-if="bothKnown(m) && !m.locked && !m.result && isLevel(m)" class="advpick">
                 <span class="apl">Empate · ¿quién pasa?</span>
                 <div class="apbtns">
-                  <button class="ap" :class="{ on: draft[m.code].adv === 'H' }" :disabled="m.locked" @click="setAdv(m, 'H')">{{ flag(m.home.team) }} {{ getTeam(m.home.team).abbr }}</button>
-                  <button class="ap" :class="{ on: draft[m.code].adv === 'A' }" :disabled="m.locked" @click="setAdv(m, 'A')">{{ flag(m.away.team) }} {{ getTeam(m.away.team).abbr }}</button>
+                  <button class="ap" :class="{ on: draft[m.code].adv === 'H' }" @click="setAdv(m, 'H')">{{ flag(m.home.team) }} {{ getTeam(m.home.team).abbr }}</button>
+                  <button class="ap" :class="{ on: draft[m.code].adv === 'A' }" @click="setAdv(m, 'A')">{{ flag(m.away.team) }} {{ getTeam(m.away.team).abbr }}</button>
                 </div>
               </div>
+              <div v-if="m.result?.winner" class="realres">{{ flag(m.result.winner) }} {{ m.result.winner }} avanzó{{ m.voided ? ' · no puntúa' : '' }}</div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Third place -->
-      <div v-if="thirdPlace" v-show="!isMobile || mobileRound === 'third'" class="third card" :class="{ saving: saving === thirdPlace.code, locked: thirdPlace.locked }">
+      <div v-if="thirdPlace" v-show="!isMobile || mobileRound === 'third'" class="third card" :class="{ saving: saving === thirdPlace.code, locked: thirdPlace.locked, voided: thirdPlace.voided }">
         <span class="medal">🥉</span>
         <div class="tp-main">
-          <span class="tp-lbl">Tercer puesto · {{ shortDay(thirdPlace.kickoffAt, thirdPlace.venue?.tz) }} <span v-if="thirdPlace.locked">🔒</span></span>
+          <span class="tp-lbl">
+            Tercer puesto · {{ shortDay(thirdPlace.kickoffAt, thirdPlace.venue?.tz) }}
+            <span v-if="thirdPlace.locked">🔒</span>
+            <span v-if="thirdPlace.voided" class="void-tag">no cuenta</span>
+          </span>
           <div class="tp-row">
             <div
               v-for="side in (['home','away'] as const)"
               :key="side"
               class="g-team"
-              :class="{ adv: bothKnown(thirdPlace) && sideOf(draft[thirdPlace.code]) === (side === 'home' ? 'H' : 'A'), tbd: !thirdPlace[side].team }"
+              :class="{ adv: advHighlight(thirdPlace, side), tbd: !thirdPlace[side].team }"
             >
               <span class="fl">{{ flag(thirdPlace[side].team) }}</span>
               <span class="nm" :class="{ slot: !thirdPlace[side].team }">{{ thirdPlace[side].team || thirdPlace[side].label }}</span>
-              <div v-if="bothKnown(thirdPlace)" class="stepper">
-                <button class="st" :disabled="thirdPlace.locked" @click="bump(thirdPlace, side === 'home' ? 'h' : 'a', -1)">−</button>
+              <div v-if="bothKnown(thirdPlace) && !thirdPlace.locked && !thirdPlace.result" class="stepper">
+                <button class="st" @click="bump(thirdPlace, side === 'home' ? 'h' : 'a', -1)">−</button>
                 <input
                   class="gin"
                   type="number"
                   inputmode="numeric"
                   min="0"
                   max="99"
-                  :disabled="thirdPlace.locked"
                   :value="draft[thirdPlace.code]?.[side === 'home' ? 'h' : 'a'] ?? ''"
                   @input="onInput(thirdPlace, side === 'home' ? 'h' : 'a', $event)"
                 />
-                <button class="st" :disabled="thirdPlace.locked" @click="bump(thirdPlace, side === 'home' ? 'h' : 'a', 1)">+</button>
+                <button class="st" @click="bump(thirdPlace, side === 'home' ? 'h' : 'a', 1)">+</button>
               </div>
+              <span v-else-if="thirdPlace.result" class="rg">{{ side === 'home' ? thirdPlace.result.homeGoals : thirdPlace.result.awayGoals }}</span>
             </div>
           </div>
-          <div v-if="bothKnown(thirdPlace) && isLevel(thirdPlace)" class="advpick">
+          <div v-if="bothKnown(thirdPlace) && !thirdPlace.locked && !thirdPlace.result && isLevel(thirdPlace)" class="advpick">
             <span class="apl">Empate · ¿quién pasa?</span>
             <div class="apbtns">
-              <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'H' }" :disabled="thirdPlace.locked" @click="setAdv(thirdPlace, 'H')">{{ flag(thirdPlace.home.team) }} {{ getTeam(thirdPlace.home.team).abbr }}</button>
-              <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'A' }" :disabled="thirdPlace.locked" @click="setAdv(thirdPlace, 'A')">{{ flag(thirdPlace.away.team) }} {{ getTeam(thirdPlace.away.team).abbr }}</button>
+              <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'H' }" @click="setAdv(thirdPlace, 'H')">{{ flag(thirdPlace.home.team) }} {{ getTeam(thirdPlace.home.team).abbr }}</button>
+              <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'A' }" @click="setAdv(thirdPlace, 'A')">{{ flag(thirdPlace.away.team) }} {{ getTeam(thirdPlace.away.team).abbr }}</button>
             </div>
           </div>
         </div>
@@ -306,6 +319,12 @@ function shortDay(d: string, tz?: string) {
 .gin { width: 30px; height: 30px; border: none; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: transparent; color: var(--txt); text-align: center; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
 .gin::-webkit-outer-spin-button, .gin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .gin:focus { outline: none; background: rgba(88,101,242,.14); }
+
+/* voided / played ties */
+.void-tag { margin-left: 6px; color: #f5c842; background: rgba(245, 200, 66, .15); border: 1px solid #5a4a1e; border-radius: 6px; padding: 0 6px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+.game.voided, .third.voided { opacity: .92; border-style: dashed; }
+.g-team .rg { flex: 0 0 auto; font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--txt); min-width: 24px; text-align: center; }
+.realres { font-size: 11px; color: var(--mut); font-weight: 700; padding: 2px 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* penalties advancer */
 .advpick { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 0; flex-wrap: wrap; }
