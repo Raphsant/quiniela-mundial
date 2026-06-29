@@ -101,10 +101,14 @@ export default defineEventHandler(async () => {
       if (!rr) continue
       row.played += 1
 
-      const predSide = sideFromScore(p.homeGoals, p.awayGoals, p.advancer)
+      // Coerce to numbers — goals stored as strings by an older write path would
+      // make the exact check wrongly fail ("2" === 2 is false) and only award +1.
+      const ph = Number(p.homeGoals), pa = Number(p.awayGoals)
+      const mh = Number(m.homeGoals), ma = Number(m.awayGoals)
+      const predSide = sideFromScore(ph, pa, p.advancer)
       const predWinnerTeam = predSide === 'H' ? rr.home.team : predSide === 'A' ? rr.away.team : null
       let gained = 0
-      if (p.homeGoals === m.homeGoals && p.awayGoals === m.awayGoals) {
+      if (ph === mh && pa === ma) {
         gained = koCfg.exact // exact score of the real fixture
       } else if (predWinnerTeam && rr.winner && predWinnerTeam === rr.winner) {
         gained = koCfg.winner // correct winner of the real fixture

@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
       const real = realAdvanceSide(m)
       if (real) return real
       const p = predByMatch.get(String(m._id))
-      return p ? sideFromScore(p.homeGoals, p.awayGoals, p.advancer) : null
+      return p ? sideFromScore(Number(p.homeGoals), Number(p.awayGoals), p.advancer) : null
     },
     refLabels: true,
   })
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
       home: r.home, // { team, label }
       away: r.away,
       winner: r.winner, // real winner once played, else propagated from the prediction
-      pred: p ? { homeGoals: p.homeGoals, awayGoals: p.awayGoals, advancer: p.advancer ?? null } : null,
+      pred: p ? { homeGoals: Number(p.homeGoals), awayGoals: Number(p.awayGoals), advancer: p.advancer ?? null } : null,
       locked: now >= new Date(m.kickoffAt).getTime(),
       voided: voidCodes.has(m.code), // excluded from scoring
       // Real result once the tie is played, so locked ties can show what happened.
