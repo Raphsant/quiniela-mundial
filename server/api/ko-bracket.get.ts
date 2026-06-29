@@ -18,6 +18,7 @@ export default defineEventHandler(async (event) => {
   const voidCodes = new Set(
     String(rc.scoring.koVoid || '').split(',').map((s) => s.trim()).filter(Boolean),
   )
+  const koCfg = { exact: Number(rc.scoring.koExact), winner: Number(rc.scoring.koWinner) }
 
   const session = await getUserSession(event)
   let dbUser: any = null
@@ -59,8 +60,22 @@ export default defineEventHandler(async (event) => {
   const rows = resolved.map((r) => {
     const m: any = r.match
     const p = predByMatch.get(String(m._id))
-    const finished = m.status === 'finished' && m.homeGoals != null && m.awayGoals != null
+    const scoreable = m.status === 'finished' && m.homeGoals != null && m.awayGoals != null
+    const finished = scoreable && !(m.homeGoals === m.awayGoals && !m.advancer) // pens not entered → not final yet
     const realSide = finished ? realAdvanceSide(m) : null
+
+    // Points this user earned on this tie (same rule as the leaderboard), so the
+    // bracket can show the prediction next to the result. null if not applicable.
+    let points: number | null = null
+    if (finished && p && !voidCodes.has(m.code)) {
+      const ph = Number(p.homeGoals), pa = Number(p.awayGoals)
+      const predSide = sideFromScore(ph, pa, p.advancer)
+      const predWinner = predSide === 'H' ? r.home.team : predSide === 'A' ? r.away.team : null
+      points = ph === Number(m.homeGoals) && pa === Number(m.awayGoals)
+        ? koCfg.exact
+        : predWinner && r.winner && predWinner === r.winner ? koCfg.winner : 0
+    }
+
     return {
       _id: String(m._id),
       code: m.code,
@@ -73,6 +88,7 @@ export default defineEventHandler(async (event) => {
       pred: p ? { homeGoals: Number(p.homeGoals), awayGoals: Number(p.awayGoals), advancer: p.advancer ?? null } : null,
       locked: now >= new Date(m.kickoffAt).getTime(),
       voided: voidCodes.has(m.code), // excluded from scoring
+      points, // earned points (null until scoreable / no prediction / voided)
       // Real result once the tie is played, so locked ties can show what happened.
       result: finished
         ? { homeGoals: m.homeGoals, awayGoals: m.awayGoals, winner: realSide === 'H' ? r.home.team : realSide === 'A' ? r.away.team : null }

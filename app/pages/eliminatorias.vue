@@ -207,7 +207,16 @@ function shortDay(d: string, tz?: string) {
                   <button class="ap" :class="{ on: draft[m.code].adv === 'A' }" @click="setAdv(m, 'A')">{{ flag(m.away.team) }} {{ getTeam(m.away.team).abbr }}</button>
                 </div>
               </div>
-              <div v-if="m.result?.winner" class="realres">{{ flag(m.result.winner) }} {{ m.result.winner }} avanzó{{ m.voided ? ' · no puntúa' : '' }}</div>
+              <!-- Played: real score is on the rows above; show their prediction here. -->
+              <div v-if="m.result" class="played">
+                <template v-if="m.pred">
+                  <span class="pl-lbl">🔮 Tu marcador</span>
+                  <span class="pl-sc">{{ m.pred.homeGoals }}–{{ m.pred.awayGoals }}</span>
+                  <span v-if="m.voided" class="pl-pts vd">no cuenta</span>
+                  <span v-else-if="m.points != null" class="pl-pts" :class="{ ok: m.points > 0 }">{{ m.points > 0 ? '+' + m.points : '0' }}</span>
+                </template>
+                <span v-else class="pl-none">sin pronóstico</span>
+              </div>
             </div>
           </div>
         </div>
@@ -253,6 +262,15 @@ function shortDay(d: string, tz?: string) {
               <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'H' }" @click="setAdv(thirdPlace, 'H')">{{ flag(thirdPlace.home.team) }} {{ getTeam(thirdPlace.home.team).abbr }}</button>
               <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'A' }" @click="setAdv(thirdPlace, 'A')">{{ flag(thirdPlace.away.team) }} {{ getTeam(thirdPlace.away.team).abbr }}</button>
             </div>
+          </div>
+          <div v-if="thirdPlace.result" class="played">
+            <template v-if="thirdPlace.pred">
+              <span class="pl-lbl">🔮 Tu marcador</span>
+              <span class="pl-sc">{{ thirdPlace.pred.homeGoals }}–{{ thirdPlace.pred.awayGoals }}</span>
+              <span v-if="thirdPlace.voided" class="pl-pts vd">no cuenta</span>
+              <span v-else-if="thirdPlace.points != null" class="pl-pts" :class="{ ok: thirdPlace.points > 0 }">{{ thirdPlace.points > 0 ? '+' + thirdPlace.points : '0' }}</span>
+            </template>
+            <span v-else class="pl-none">sin pronóstico</span>
           </div>
         </div>
       </div>
@@ -324,7 +342,14 @@ function shortDay(d: string, tz?: string) {
 .void-tag { margin-left: 6px; color: #f5c842; background: rgba(245, 200, 66, .15); border: 1px solid #5a4a1e; border-radius: 6px; padding: 0 6px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
 .game.voided, .third.voided { opacity: .92; border-style: dashed; }
 .g-team .rg { flex: 0 0 auto; font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--txt); min-width: 24px; text-align: center; }
-.realres { font-size: 11px; color: var(--mut); font-weight: 700; padding: 2px 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* played tie: their prediction + points, beneath the real result on the rows */
+.played { display: flex; align-items: center; gap: 7px; padding: 5px 3px 1px; margin-top: 3px; border-top: 1px dashed #232936; font-size: 11px; }
+.pl-lbl { color: #8a93a3; font-weight: 700; }
+.pl-sc { color: var(--txt); font-weight: 800; font-variant-numeric: tabular-nums; }
+.pl-pts { margin-left: auto; font-weight: 800; font-size: 10.5px; color: var(--mut); background: #0f1116; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.pl-pts.ok { color: var(--good); border-color: #2e5a36; background: rgba(63, 185, 80, .12); }
+.pl-pts.vd { color: #f5c842; border-color: #5a4a1e; background: rgba(245, 200, 66, .12); }
+.pl-none { color: #6b7280; font-style: italic; }
 
 /* penalties advancer */
 .advpick { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 0; flex-wrap: wrap; }
