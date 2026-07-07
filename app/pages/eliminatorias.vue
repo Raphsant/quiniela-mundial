@@ -43,10 +43,12 @@ const isLevel = (m: any) => {
   const d = draft[m.code]
   return d && d.h != null && d.a != null && d.h === d.a
 }
-// Highlight the real winner once a tie is played; otherwise the user's pick.
+// Highlight the team the USER picked to advance — this is their bracket, so it
+// always reflects their own pick (locked → the saved winner, open → live draft).
 function advHighlight(m: any, side: 'home' | 'away') {
   const team = side === 'home' ? m.home?.team : m.away?.team
-  if (m.result?.winner) return m.result.winner === team
+  if (!team) return false
+  if (m.locked) return m.winner === team
   return bothKnown(m) && sideOf(draft[m.code]) === (side === 'home' ? 'H' : 'A')
 }
 
@@ -115,7 +117,7 @@ function shortDay(d: string, tz?: string) {
   <div>
     <section class="hero">
       <h1>🎯 Cuadro de Eliminatorias</h1>
-      <p>Nuevo pronóstico con los <strong>equipos que realmente clasificaron</strong>. Esta vez predices el <strong>marcador</strong>: 2 puntos si aciertas el resultado exacto, 1 si solo aciertas quién avanza.</p>
+      <p>Tu cuadro se arma con <strong>tus propios ganadores</strong> — tu campeón siempre es el que tú elegiste. Predices el <strong>marcador</strong> de cada cruce: <strong>2 puntos</strong> por el resultado exacto, <strong>1</strong> por acertar quién avanza. Solo puntúas un cruce si los dos equipos que pusiste son los que de verdad jugaron.</p>
     </section>
 
     <!-- Not logged in -->
@@ -167,7 +169,7 @@ function shortDay(d: string, tz?: string) {
         <div v-for="col in columns" v-show="!isMobile || mobileRound === col.key" :key="col.key" class="round">
           <div class="rhead">{{ col.label }}</div>
           <div v-for="m in col.games" :key="m.code" class="seed">
-            <div class="game card" :class="{ saving: saving === m.code, locked: m.locked, voided: m.voided }">
+            <div class="game card" :class="{ saving: saving === m.code, locked: m.locked, voided: m.voided, busted: m.busted }">
               <div class="g-meta">
                 {{ shortDay(m.kickoffAt, m.venue?.tz) }} · {{ m.venue?.city }}
                 <span v-if="m.locked" class="lk">🔒</span>
@@ -182,8 +184,8 @@ function shortDay(d: string, tz?: string) {
               >
                 <span class="fl">{{ flag(m[side].team) }}</span>
                 <span class="nm" :class="{ slot: !m[side].team }">{{ m[side].team || m[side].label }}</span>
-                <!-- Open tie: predict the score. Played/locked tie: show the result. -->
-                <div v-if="bothKnown(m) && !m.locked && !m.result" class="stepper">
+                <!-- Open tie: predict the score. Scored tie: real score. Otherwise: your saved score. -->
+                <div v-if="bothKnown(m) && !m.locked && !m.busted && !m.result" class="stepper">
                   <button class="st" @click="bump(m, side === 'home' ? 'h' : 'a', -1)">−</button>
                   <input
                     class="gin"
@@ -197,17 +199,18 @@ function shortDay(d: string, tz?: string) {
                   <button class="st" @click="bump(m, side === 'home' ? 'h' : 'a', 1)">+</button>
                 </div>
                 <span v-else-if="m.result" class="rg">{{ side === 'home' ? m.result.homeGoals : m.result.awayGoals }}</span>
+                <span v-else-if="m.pred" class="rg pred">{{ side === 'home' ? m.pred.homeGoals : m.pred.awayGoals }}</span>
               </div>
 
               <!-- Penalties: who advances on a level predicted score (open ties only) -->
-              <div v-if="bothKnown(m) && !m.locked && !m.result && isLevel(m)" class="advpick">
+              <div v-if="bothKnown(m) && !m.locked && !m.busted && !m.result && isLevel(m)" class="advpick">
                 <span class="apl">Empate · ¿quién pasa?</span>
                 <div class="apbtns">
                   <button class="ap" :class="{ on: draft[m.code].adv === 'H' }" @click="setAdv(m, 'H')">{{ flag(m.home.team) }} {{ getTeam(m.home.team).abbr }}</button>
                   <button class="ap" :class="{ on: draft[m.code].adv === 'A' }" @click="setAdv(m, 'A')">{{ flag(m.away.team) }} {{ getTeam(m.away.team).abbr }}</button>
                 </div>
               </div>
-              <!-- Played: real score is on the rows above; show their prediction here. -->
+              <!-- Scored tie: real score is on the rows above; show their prediction + points. -->
               <div v-if="m.result" class="played">
                 <template v-if="m.pred">
                   <span class="pl-lbl">🔮 Tu marcador</span>
@@ -217,13 +220,19 @@ function shortDay(d: string, tz?: string) {
                 </template>
                 <span v-else class="pl-none">sin pronóstico</span>
               </div>
+              <!-- Busted tie: the matchup they drew never happened → no points. -->
+              <div v-else-if="m.busted" class="played busted-note">
+                <span class="pl-lbl">✖ Este cruce no se dio</span>
+                <span v-if="m.realTeams" class="pl-real">jugaron {{ flag(m.realTeams.home) }}{{ getTeam(m.realTeams.home).abbr }} vs {{ flag(m.realTeams.away) }}{{ getTeam(m.realTeams.away).abbr }}</span>
+                <span class="pl-pts">0</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Third place -->
-      <div v-if="thirdPlace" v-show="!isMobile || mobileRound === 'third'" class="third card" :class="{ saving: saving === thirdPlace.code, locked: thirdPlace.locked, voided: thirdPlace.voided }">
+      <div v-if="thirdPlace" v-show="!isMobile || mobileRound === 'third'" class="third card" :class="{ saving: saving === thirdPlace.code, locked: thirdPlace.locked, voided: thirdPlace.voided, busted: thirdPlace.busted }">
         <span class="medal">🥉</span>
         <div class="tp-main">
           <span class="tp-lbl">
@@ -240,7 +249,7 @@ function shortDay(d: string, tz?: string) {
             >
               <span class="fl">{{ flag(thirdPlace[side].team) }}</span>
               <span class="nm" :class="{ slot: !thirdPlace[side].team }">{{ thirdPlace[side].team || thirdPlace[side].label }}</span>
-              <div v-if="bothKnown(thirdPlace) && !thirdPlace.locked && !thirdPlace.result" class="stepper">
+              <div v-if="bothKnown(thirdPlace) && !thirdPlace.locked && !thirdPlace.busted && !thirdPlace.result" class="stepper">
                 <button class="st" @click="bump(thirdPlace, side === 'home' ? 'h' : 'a', -1)">−</button>
                 <input
                   class="gin"
@@ -254,9 +263,10 @@ function shortDay(d: string, tz?: string) {
                 <button class="st" @click="bump(thirdPlace, side === 'home' ? 'h' : 'a', 1)">+</button>
               </div>
               <span v-else-if="thirdPlace.result" class="rg">{{ side === 'home' ? thirdPlace.result.homeGoals : thirdPlace.result.awayGoals }}</span>
+              <span v-else-if="thirdPlace.pred" class="rg pred">{{ side === 'home' ? thirdPlace.pred.homeGoals : thirdPlace.pred.awayGoals }}</span>
             </div>
           </div>
-          <div v-if="bothKnown(thirdPlace) && !thirdPlace.locked && !thirdPlace.result && isLevel(thirdPlace)" class="advpick">
+          <div v-if="bothKnown(thirdPlace) && !thirdPlace.locked && !thirdPlace.busted && !thirdPlace.result && isLevel(thirdPlace)" class="advpick">
             <span class="apl">Empate · ¿quién pasa?</span>
             <div class="apbtns">
               <button class="ap" :class="{ on: draft[thirdPlace.code].adv === 'H' }" @click="setAdv(thirdPlace, 'H')">{{ flag(thirdPlace.home.team) }} {{ getTeam(thirdPlace.home.team).abbr }}</button>
@@ -271,6 +281,11 @@ function shortDay(d: string, tz?: string) {
               <span v-else-if="thirdPlace.points != null" class="pl-pts" :class="{ ok: thirdPlace.points > 0 }">{{ thirdPlace.points > 0 ? '+' + thirdPlace.points : '0' }}</span>
             </template>
             <span v-else class="pl-none">sin pronóstico</span>
+          </div>
+          <div v-else-if="thirdPlace.busted" class="played busted-note">
+            <span class="pl-lbl">✖ Este cruce no se dio</span>
+            <span v-if="thirdPlace.realTeams" class="pl-real">jugaron {{ flag(thirdPlace.realTeams.home) }}{{ getTeam(thirdPlace.realTeams.home).abbr }} vs {{ flag(thirdPlace.realTeams.away) }}{{ getTeam(thirdPlace.realTeams.away).abbr }}</span>
+            <span class="pl-pts">0</span>
           </div>
         </div>
       </div>
@@ -350,6 +365,14 @@ function shortDay(d: string, tz?: string) {
 .pl-pts.ok { color: var(--good); border-color: #2e5a36; background: rgba(63, 185, 80, .12); }
 .pl-pts.vd { color: #f5c842; border-color: #5a4a1e; background: rgba(245, 200, 66, .12); }
 .pl-none { color: #6b7280; font-style: italic; }
+/* your own saved score shown statically (locked/busted ties) */
+.g-team .rg.pred { color: var(--mut); font-weight: 800; }
+/* busted tie: the matchup you drew never happened */
+.game.busted, .third.busted { opacity: .72; }
+.game.busted .g-team.adv, .third.busted .g-team.adv { background: rgba(229, 115, 123, .1); border-color: #5a2e30; }
+.game.busted .g-team.adv .nm, .third.busted .g-team.adv .nm { color: #f0c2c5; text-decoration: line-through; }
+.busted-note .pl-lbl { color: #e5737b; }
+.pl-real { color: var(--mut); font-weight: 700; font-size: 10.5px; }
 
 /* penalties advancer */
 .advpick { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 0; flex-wrap: wrap; }

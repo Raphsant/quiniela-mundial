@@ -6,6 +6,7 @@
 //     tables (points → goal diff → goals scored) and actual knockout scores
 //     (plus the admin-set `advancer` for matches decided on penalties).
 import { project, type GroupMatch, type Outcome, type Projection } from './projection'
+import { sideFromScore } from './scoring'
 
 export const STAGE_RANK: Record<string, number> = { r32: 0, r16: 1, qf: 2, sf: 3, third: 4, final: 5 }
 
@@ -292,4 +293,32 @@ export function resolveRealBracket(groupMatches: any[], koMatches: any[]) {
   })
   const byId = new Map(resolved.map((r) => [String(r.match._id), r]))
   return { ...tables, resolved, byId }
+}
+
+// ── One user's PREDICTED knockout bracket (from their scorelines) ─────────────
+
+// Build a single user's own bracket from their SCORELINE predictions. The Round
+// of 32 fills from the REAL group tables (the actual qualified teams — the same
+// for everyone), then every tie advances by the side the USER's predicted score
+// picks, propagating their own winners all the way to their champion. Unlike the
+// display in the "real" bracket, this is NEVER overridden by real results — it is
+// the user's picture of the tournament, so their champion is always their pick.
+export function resolveUserScorelineBracket(
+  tables: RealGroupTables,
+  koMatches: any[],
+  predByMatchId: Map<string, { homeGoals: any; awayGoals: any; advancer?: 'H' | 'A' | null }>,
+) {
+  const resolved = resolveKnockout({
+    koMatches,
+    groupSettled: (g) => !!tables.settled[g],
+    groupPos: tables.pos,
+    qualifiedThirds: tables.qualifiedThirds,
+    advance: (m) => {
+      const p = predByMatchId.get(String(m._id))
+      return p ? sideFromScore(Number(p.homeGoals), Number(p.awayGoals), p.advancer ?? null) : null
+    },
+    refLabels: true,
+  })
+  const byCode = new Map(resolved.map((r) => [r.match.code, r]))
+  return { resolved, byCode }
 }
