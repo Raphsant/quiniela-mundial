@@ -1,16 +1,15 @@
 import { Match } from '../models/Match'
 import { User } from '../models/User'
 import { KnockoutPrediction } from '../models/KnockoutPrediction'
-import { realGroupTables, resolveRealBracket, resolveUserScorelineBracket } from '../utils/bracket'
+import { realGroupTables, resolveKnockout, realAdvanceSide } from '../utils/bracket'
 import { sideFromScore } from '../utils/scoring'
 
-// The logged-in user's NEW knockout bracket, as a CLASSIC bracket: the Round of
-// 32 is the ACTUAL qualified teams, and every later round shows the teams the
-// USER predicted to advance (their own winners propagate all the way up, so their
-// champion is always their pick and never changes when a real favourite is
-// knocked out). Real results are used only for FEEDBACK per tie: a tie the user
-// predicted scores (team-based) only when the matchup they drew actually happened;
-// once the real teams for a slot differ from theirs, that slot is "busted".
+// The logged-in user's NEW knockout bracket. The Round of 32 is filled with the
+// ACTUAL qualified teams. Each tie then advances by REAL result once it's played
+// (so already-decided ties show the real winner to everyone and never block the
+// rounds below them), and by the user's predicted scoreline for ties not yet
+// played — letting anyone complete the whole bracket regardless of what they
+// caught in time.
 export default defineEventHandler(async (event) => {
   const rc = useRuntimeConfig()
   if (!rc.public.newKo) {
@@ -40,44 +39,41 @@ export default defineEventHandler(async (event) => {
     for (const p of preds as any[]) predByMatch.set(String(p.match), p)
   }
 
-  // The user's OWN bracket: their predicted winners propagate all the way up.
-  const userBracket = resolveUserScorelineBracket(tables, koMatches, predByMatch)
-  // The REAL bracket (actual teams/results), used only to judge each tie.
-  const real = resolveRealBracket(groupMatches, koMatches)
-  const realByCode = new Map(real.resolved.map((r) => [r.match.code, r]))
+  // Fill the bracket from reality. Played ties advance by their REAL winner (so
+  // they never block the rounds below); unplayed ties advance by the user's
+  // predicted score.
+  const resolved = resolveKnockout({
+    koMatches,
+    groupSettled: (g) => !!tables.settled[g],
+    groupPos: tables.pos,
+    qualifiedThirds: tables.qualifiedThirds,
+    advance: (m) => {
+      const real = realAdvanceSide(m)
+      if (real) return real
+      const p = predByMatch.get(String(m._id))
+      return p ? sideFromScore(Number(p.homeGoals), Number(p.awayGoals), p.advancer) : null
+    },
+    refLabels: true,
+  })
 
   const now = Date.now()
-  const rows = userBracket.resolved.map((r) => {
+  const rows = resolved.map((r) => {
     const m: any = r.match
     const p = predByMatch.get(String(m._id))
-    const voided = voidCodes.has(m.code)
-    const rr = realByCode.get(m.code) // real teams + winner for this slot
-
     const scoreable = m.status === 'finished' && m.homeGoals != null && m.awayGoals != null
     const finished = scoreable && !(m.homeGoals === m.awayGoals && !m.advancer) // pens not entered → not final yet
+    const realSide = finished ? realAdvanceSide(m) : null
 
-    // Does the matchup the user drew for this slot actually occur in reality?
-    const realHome = rr?.home.team ?? null
-    const realAway = rr?.away.team ?? null
-    const realTeamsKnown = !!(realHome && realAway)
-    const matchupMatches = realTeamsKnown && r.home.team === realHome && r.away.team === realAway
-    // Their bracket has diverged here — the tie they predicted can never happen —
-    // once the real teams for this slot are known and differ from theirs.
-    const busted = realTeamsKnown && !!(r.home.team && r.away.team) && !matchupMatches
-
-    // Team-based points: only when the predicted matchup actually took place.
+    // Points this user earned on this tie (same rule as the leaderboard), so the
+    // bracket can show the prediction next to the result. null if not applicable.
     let points: number | null = null
-    if (finished && p && !voided) {
-      if (matchupMatches) {
-        const ph = Number(p.homeGoals), pa = Number(p.awayGoals)
-        const predSide = sideFromScore(ph, pa, p.advancer)
-        const predWinner = predSide === 'H' ? r.home.team : predSide === 'A' ? r.away.team : null
-        points = ph === Number(m.homeGoals) && pa === Number(m.awayGoals)
-          ? koCfg.exact
-          : predWinner && rr!.winner && predWinner === rr!.winner ? koCfg.winner : 0
-      } else {
-        points = 0 // the tie they predicted didn't happen → no points
-      }
+    if (finished && p && !voidCodes.has(m.code)) {
+      const ph = Number(p.homeGoals), pa = Number(p.awayGoals)
+      const predSide = sideFromScore(ph, pa, p.advancer)
+      const predWinner = predSide === 'H' ? r.home.team : predSide === 'A' ? r.away.team : null
+      points = ph === Number(m.homeGoals) && pa === Number(m.awayGoals)
+        ? koCfg.exact
+        : predWinner && r.winner && predWinner === r.winner ? koCfg.winner : 0
     }
 
     return {
@@ -86,20 +82,16 @@ export default defineEventHandler(async (event) => {
       stage: m.stage,
       kickoffAt: m.kickoffAt,
       venue: m.venue || null,
-      home: r.home, // { team, label } — the USER's predicted teams
+      home: r.home, // { team, label }
       away: r.away,
-      winner: r.winner, // the USER's predicted winner (their champion path)
+      winner: r.winner, // real winner once played, else propagated from the prediction
       pred: p ? { homeGoals: Number(p.homeGoals), awayGoals: Number(p.awayGoals), advancer: p.advancer ?? null } : null,
       locked: now >= new Date(m.kickoffAt).getTime(),
-      voided, // excluded from scoring
+      voided: voidCodes.has(m.code), // excluded from scoring
       points, // earned points (null until scoreable / no prediction / voided)
-      busted, // the user's predicted matchup can no longer happen
-      // The real teams that actually took this slot (for "este cruce no se dio").
-      realTeams: realTeamsKnown ? { home: realHome, away: realAway } : null,
-      // Real score shown inline only when the matchup matches (so it lines up with
-      // the user's own two teams); a busted slot has no comparable score.
-      result: finished && matchupMatches
-        ? { homeGoals: m.homeGoals, awayGoals: m.awayGoals, winner: rr!.winner }
+      // Real result once the tie is played, so locked ties can show what happened.
+      result: finished
+        ? { homeGoals: m.homeGoals, awayGoals: m.awayGoals, winner: realSide === 'H' ? r.home.team : realSide === 'A' ? r.away.team : null }
         : null,
     }
   })
@@ -107,7 +99,7 @@ export default defineEventHandler(async (event) => {
   return {
     loggedIn: !!dbUser,
     ready, // are all groups settled (real R32 known)?
-    champion: rows.find((r) => r.stage === 'final')?.winner ?? null, // the user's pick
+    champion: rows.find((r) => r.stage === 'final')?.winner ?? null,
     predictedCount: rows.filter((r) => r.pred).length,
     totalGames: rows.length,
     rows,
